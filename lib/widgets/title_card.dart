@@ -47,7 +47,9 @@ class TitleCard extends StatelessWidget {
                   const SizedBox(width: 4),
                   Expanded(
                     child: Text(
-                      title.status.label,
+                      title.status == WatchStatus.assistindo && title.currentSeason != null
+                          ? '${title.status.label} · T${title.currentSeason} E${title.currentEpisode ?? 1}'
+                          : title.status.label,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(fontSize: 11, color: scheme.primary),

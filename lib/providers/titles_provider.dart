@@ -25,7 +25,13 @@ class TitlesNotifier extends AsyncNotifier<List<TitleModel>> {
   Future<void> updateStatus(String titleId, String status, {String? recommendedBy}) async {
     final repo = ref.read(titlesRepositoryProvider);
     await repo.updateStatus(titleId: titleId, status: status, recommendedBy: recommendedBy);
-    await refresh();
+    state = await AsyncValue.guard(() => repo.fetchAll());
+  }
+
+  Future<void> updateProgress(String titleId, {required int season, required int episode}) async {
+    final repo = ref.read(titlesRepositoryProvider);
+    await repo.updateProgress(titleId: titleId, season: season, episode: episode);
+    state = await AsyncValue.guard(() => repo.fetchAll());
   }
 
   Future<void> deleteTitle(String titleId) async {

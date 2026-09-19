@@ -24,6 +24,17 @@ class TitlesRepository {
     }).eq('id', titleId);
   }
 
+  Future<void> updateProgress({
+    required String titleId,
+    required int season,
+    required int episode,
+  }) async {
+    await supabase.from('titles').update({
+      'current_season': season,
+      'current_episode': episode,
+    }).eq('id', titleId);
+  }
+
   Future<void> delete(String titleId) async {
     await supabase.from('titles').delete().eq('id', titleId);
   }

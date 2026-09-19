@@ -49,10 +49,28 @@ class TmdbService {
   Future<List<TmdbSearchResult>> search(String query) async {
     if (query.trim().isEmpty || !isConfigured) return [];
 
+    // Busca em pt-BR e en-US e junta: a busca em pt-BR sozinha não acha
+    // títulos pelo nome original (ex: "inception" -> "A Origem").
+    final responses = await Future.wait([
+      _searchIn(query, 'pt-BR'),
+      _searchIn(query, 'en-US'),
+    ]);
+
+    final merged = <String, TmdbSearchResult>{};
+    for (final r in responses[0]) {
+      merged['${r.mediaType}:${r.id}'] = r;
+    }
+    for (final r in responses[1]) {
+      merged.putIfAbsent('${r.mediaType}:${r.id}', () => r);
+    }
+    return merged.values.toList();
+  }
+
+  Future<List<TmdbSearchResult>> _searchIn(String query, String language) async {
     final uri = Uri.parse('$_baseUrl/search/multi').replace(queryParameters: {
       'api_key': _apiKey,
       'query': query,
-      'language': 'pt-BR',
+      'language': language,
       'include_adult': 'false',
     });
 
@@ -62,12 +80,10 @@ class TmdbService {
     }
 
     final data = jsonDecode(response.body) as Map<String, dynamic>;
-    final results = (data['results'] as List? ?? [])
+    return (data['results'] as List? ?? [])
         .where((r) => r['media_type'] == 'movie' || r['media_type'] == 'tv')
         .map((r) => _fromJson(r as Map<String, dynamic>))
         .toList();
-
-    return results;
   }
 
   TmdbSearchResult _fromJson(Map<String, dynamic> json) {

@@ -1,0 +1,20 @@
+# A build web roda na Vercel (vercel_build.sh); nada disto é necessário lá.
+build/
+.dart_tool/
+.idea/
+.vscode/
+.git/
+
+# Plataformas que não entram no build web
+android/
+windows/
+
+# Segredos e arquivos locais (as chaves vêm das Environment Variables da Vercel)
+.env
+.env.*
+!.env.example
+.flutter-plugins-dependencies
+*.iml
+
+# Fonte da imagem dos ícones (já convertida em web/icons)
+nosflix.png

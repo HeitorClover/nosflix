@@ -18,11 +18,16 @@ RatingModel? _findRating(List<RatingModel> ratings, Profile owner) {
 }
 
 class TitleDetailScreen extends ConsumerWidget {
-  final TitleModel title;
-  const TitleDetailScreen({super.key, required this.title});
+  final TitleModel initialTitle;
+  const TitleDetailScreen({super.key, required TitleModel title}) : initialTitle = title;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final title = ref.watch(titlesProvider).valueOrNull?.firstWhere(
+              (t) => t.id == initialTitle.id,
+              orElse: () => initialTitle,
+            ) ??
+        initialTitle;
     final ratingsAsync = ref.watch(ratingsForTitleProvider(title.id));
     final profile = ref.watch(profileProvider).profile;
 
@@ -64,6 +69,11 @@ class TitleDetailScreen extends ConsumerWidget {
                   ),
                   const SizedBox(height: 16),
                   _StatusSelector(title: title, profile: profile),
+                  if (title.status == WatchStatus.assistindo && title.mediaType == 'tv')
+                    _ProgressCard(
+                      key: ValueKey(title.id),
+                      title: title,
+                    ),
                   if (title.status == WatchStatus.recomendo && title.recommendedBy != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 8),
@@ -116,7 +126,7 @@ class TitleDetailScreen extends ConsumerWidget {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Remover título?'),
-        content: Text('Isso vai apagar "${title.title}" e as avaliações de vocês dois.'),
+        content: Text('Isso vai apagar "${initialTitle.title}" e as avaliações de vocês dois.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
           FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Remover')),
@@ -124,7 +134,7 @@ class TitleDetailScreen extends ConsumerWidget {
       ),
     );
     if (confirmed == true) {
-      await ref.read(titlesProvider.notifier).deleteTitle(title.id);
+      await ref.read(titlesProvider.notifier).deleteTitle(initialTitle.id);
       if (context.mounted) Navigator.of(context).pop();
     }
   }
@@ -155,6 +165,75 @@ class _StatusSelector extends ConsumerWidget {
                   );
             },
           ),
+      ],
+    );
+  }
+}
+
+class _ProgressCard extends ConsumerStatefulWidget {
+  final TitleModel title;
+  const _ProgressCard({super.key, required this.title});
+
+  @override
+  ConsumerState<_ProgressCard> createState() => _ProgressCardState();
+}
+
+class _ProgressCardState extends ConsumerState<_ProgressCard> {
+  late int _season;
+  late int _episode;
+
+  @override
+  void initState() {
+    super.initState();
+    _season = widget.title.currentSeason ?? 1;
+    _episode = widget.title.currentEpisode ?? 1;
+  }
+
+  void _change({int season = 0, int episode = 0}) {
+    setState(() {
+      _season = (_season + season).clamp(1, 999);
+      _episode = (_episode + episode).clamp(1, 9999);
+    });
+    ref.read(titlesProvider.notifier).updateProgress(
+          widget.title.id,
+          season: _season,
+          episode: _episode,
+        );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.only(top: 12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Column(
+          children: [
+            _stepper('Temporada', _season, (d) => _change(season: d)),
+            _stepper('Episódio', _episode, (d) => _change(episode: d)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _stepper(String label, int value, void Function(int delta) onChange) {
+    return Row(
+      children: [
+        Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+        const Spacer(),
+        IconButton(
+          icon: const Icon(Icons.remove_circle_outline),
+          onPressed: value > 1 ? () => onChange(-1) : null,
+        ),
+        SizedBox(
+          width: 32,
+          child: Text('$value', textAlign: TextAlign.center, style: const TextStyle(fontSize: 16)),
+        ),
+        IconButton(
+          icon: const Icon(Icons.add_circle_outline),
+          onPressed: () => onChange(1),
+        ),
       ],
     );
   }

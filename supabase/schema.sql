@@ -25,6 +25,10 @@ create table if not exists public.titles (
   status text not null default 'quero_ver'
     check (status in ('quero_ver', 'assistindo', 'assistido_juntos', 'recomendo')),
 
+  -- progresso de séries (usado quando status = 'assistindo')
+  current_season integer,
+  current_episode integer,
+
   -- só usado quando status = 'recomendo' (quem assistiu sozinho e tá indicando)
   recommended_by text check (recommended_by in ('heitor', 'leticia')),
 
