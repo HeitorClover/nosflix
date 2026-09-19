@@ -11,7 +11,7 @@ extension WatchStatusX on WatchStatus {
       };
 
   String get label => switch (this) {
-        WatchStatus.queroVer => 'Quero ver',
+        WatchStatus.queroVer => 'Temos que ver juntos',
         WatchStatus.assistindo => 'Assistindo',
         WatchStatus.assistidoJuntos => 'Já vimos juntos',
         WatchStatus.recomendo => 'Recomendo',

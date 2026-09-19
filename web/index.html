@@ -22,7 +22,9 @@
   <meta name="theme-color" content="#FF2E3D">
 
   <!-- iOS meta tags & icons -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <meta name="apple-mobile-web-app-title" content="Nosflix">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
@@ -32,6 +34,11 @@
 
   <title>Nosflix</title>
   <link rel="manifest" href="manifest.json">
+  <style>
+    /* Sem flash branco ao abrir e sem o "puxar pra atualizar" do navegador
+       brigando com o do app. */
+    html, body { background: #0B0506; overscroll-behavior-y: none; }
+  </style>
 </head>
 <body>
   <!--
@@ -42,6 +49,7 @@
     For more details:
     * https://docs.flutter.dev/platform-integration/web/initialization
   -->
+  <script src="push.js"></script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

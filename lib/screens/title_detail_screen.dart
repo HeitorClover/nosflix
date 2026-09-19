@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import '../core/push/push_service.dart';
 import '../core/theme/app_theme.dart';
 import '../models/rating_model.dart';
 import '../models/title_model.dart';
@@ -234,11 +235,16 @@ class _StatusSelector extends ConsumerWidget {
             selected: title.status == s,
             onTap: () async {
               final recommendedBy = s == WatchStatus.recomendo ? profile?.name : null;
+              final newRecommendation = s == WatchStatus.recomendo && title.status != s;
               await ref.read(titlesProvider.notifier).updateStatus(
                     title.id,
                     s.value,
                     recommendedBy: recommendedBy,
                   );
+              if (newRecommendation && profile != null) {
+                // Sem await: o aviso segue em segundo plano.
+                PushService.notifyRecommendation(titleId: title.id, from: profile!);
+              }
             },
           ),
       ],

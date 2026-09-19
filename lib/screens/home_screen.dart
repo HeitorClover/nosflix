@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../core/push/push_service.dart';
 import '../core/theme/app_theme.dart';
 import '../models/title_model.dart';
 import '../models/watch_status.dart';
@@ -11,6 +12,28 @@ import '../widgets/title_card.dart';
 import 'add_title_screen.dart';
 import 'title_detail_screen.dart';
 
+enum _HomeFilter {
+  all('Tudo', Icons.apps_rounded),
+  queroVer('Temos que ver juntos', Icons.bookmark_add_outlined),
+  assistindo('Assistindo', Icons.play_circle_outline),
+  assistidoJuntos('Já vimos juntos', Icons.favorite),
+  recommendedByMe('Recomendei', Icons.campaign_outlined),
+  recommendedToMe('Pra mim', Icons.card_giftcard_rounded);
+
+  final String label;
+  final IconData icon;
+  const _HomeFilter(this.label, this.icon);
+
+  bool matches(TitleModel t, Profile me) => switch (this) {
+        _HomeFilter.all => true,
+        _HomeFilter.queroVer => t.status == WatchStatus.queroVer,
+        _HomeFilter.assistindo => t.status == WatchStatus.assistindo,
+        _HomeFilter.assistidoJuntos => t.status == WatchStatus.assistidoJuntos,
+        _HomeFilter.recommendedByMe => t.status == WatchStatus.recomendo && t.recommendedBy == me.name,
+        _HomeFilter.recommendedToMe => t.status == WatchStatus.recomendo && t.recommendedBy != me.name,
+      };
+}
+
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
@@ -19,14 +42,65 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
-  WatchStatus? _filter;
+  _HomeFilter _filter = _HomeFilter.all;
+  PushStatus _pushStatus = PushStatus.unsupported;
   final _searchController = TextEditingController();
   String _query = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _pushStatus = PushService.status();
+    final profile = ref.read(profileProvider).profile;
+    if (profile != null) PushService.syncIfGranted(profile);
+  }
 
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _onBellTap(Profile profile) async {
+    final messenger = ScaffoldMessenger.of(context);
+    if (_pushStatus == PushStatus.off) {
+      try {
+        final result = await PushService.enable(profile);
+        if (!mounted) return;
+        setState(() => _pushStatus = result);
+        messenger.showSnackBar(SnackBar(
+          content: Text(result == PushStatus.on
+              ? 'Notificações ativadas neste aparelho!'
+              : 'Não foi possível ativar as notificações.'),
+        ));
+      } catch (e) {
+        if (!mounted) return;
+        setState(() => _pushStatus = PushService.status());
+        messenger.showSnackBar(SnackBar(content: Text('Erro ao ativar as notificações: $e')));
+      }
+    } else if (_pushStatus == PushStatus.needsInstall) {
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Instale o Nosflix'),
+          content: const Text(
+            'No iPhone, as notificações só funcionam com o app instalado:\n\n'
+            '1. Toque no botão Compartilhar do Safari\n'
+            '2. Escolha "Adicionar à Tela de Início"\n'
+            '3. Abra o Nosflix pelo ícone novo e toque no sino',
+          ),
+          actions: [
+            FilledButton(onPressed: () => Navigator.pop(context), child: const Text('Entendi')),
+          ],
+        ),
+      );
+    } else if (_pushStatus == PushStatus.blocked) {
+      messenger.showSnackBar(const SnackBar(
+        content: Text('As notificações estão bloqueadas. Libere nas configurações do navegador.'),
+      ));
+    } else {
+      messenger.showSnackBar(const SnackBar(content: Text('Notificações já estão ativadas neste aparelho.')));
+    }
   }
 
   void _open(TitleModel title) {
@@ -52,7 +126,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         child: SafeArea(
           child: Column(
             children: [
-              _Header(profile: profile, onSwitch: () => ref.read(profileProvider.notifier).signOut()),
+              _Header(
+                profile: profile,
+                pushStatus: _pushStatus,
+                onBell: () => _onBellTap(profile),
+                onSwitch: () => ref.read(profileProvider.notifier).signOut(),
+              ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                 child: TextField(
@@ -79,8 +158,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   children: [
-                    _pill(null, 'Tudo', Icons.apps_rounded),
-                    for (final s in WatchStatus.values) _pill(s, s.label, s.icon),
+                    for (final f in _HomeFilter.values) _pill(f),
                   ],
                 ),
               ),
@@ -101,20 +179,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Widget _pill(WatchStatus? status, String label, IconData icon) {
+  Widget _pill(_HomeFilter filter) {
     return Padding(
       padding: const EdgeInsets.only(right: 8),
       child: ChoicePill(
-        label: label,
-        icon: icon,
-        selected: _filter == status,
-        onTap: () => setState(() => _filter = status),
+        label: filter.label,
+        icon: filter.icon,
+        selected: _filter == filter,
+        onTap: () => setState(() => _filter = filter),
       ),
     );
   }
 
   Widget _buildContent(List<TitleModel> titles) {
-    var filtered = titles.where((t) => _filter == null || t.status == _filter).toList();
+    final me = ref.read(profileProvider).profile ?? Profile.leticia;
+    var filtered = titles.where((t) => _filter.matches(t, me)).toList();
     final hasQuery = _query.trim().isNotEmpty;
     if (hasQuery) {
       final q = _query.trim().toLowerCase();
@@ -127,7 +206,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (filtered.isEmpty) return const _EmptyState();
 
     final watching = titles.where((t) => t.status == WatchStatus.assistindo).toList();
-    final showContinue = _filter == null && !hasQuery && watching.isNotEmpty;
+    final showContinue = _filter == _HomeFilter.all && !hasQuery && watching.isNotEmpty;
 
     return RefreshIndicator(
       onRefresh: () => ref.read(titlesProvider.notifier).refresh(),
@@ -183,8 +262,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
 class _Header extends StatelessWidget {
   final Profile profile;
+  final PushStatus pushStatus;
+  final VoidCallback onBell;
   final VoidCallback onSwitch;
-  const _Header({required this.profile, required this.onSwitch});
+  const _Header({
+    required this.profile,
+    required this.pushStatus,
+    required this.onBell,
+    required this.onSwitch,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -204,6 +290,24 @@ class _Header extends StatelessWidget {
             ],
           ),
           const Spacer(),
+          if (pushStatus != PushStatus.unsupported)
+            IconButton(
+              tooltip: switch (pushStatus) {
+                PushStatus.on => 'Notificações ativadas',
+                PushStatus.blocked => 'Notificações bloqueadas',
+                _ => 'Ativar notificações',
+              },
+              icon: Icon(
+                switch (pushStatus) {
+                  PushStatus.on => Icons.notifications_active_rounded,
+                  PushStatus.blocked => Icons.notifications_off_outlined,
+                  _ => Icons.notifications_none_rounded,
+                },
+                color: pushStatus == PushStatus.on ? Theme.of(context).colorScheme.primary : null,
+              ),
+              onPressed: onBell,
+            ),
+          const SizedBox(width: 4),
           Tooltip(
             message: 'Trocar perfil',
             child: MouseRegion(

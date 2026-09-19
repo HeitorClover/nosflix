@@ -63,6 +63,21 @@ create table if not exists public.ratings (
 create index if not exists ratings_title_idx on public.ratings (title_id);
 
 -- ============================================================
+-- push_subscriptions: aparelhos que aceitaram receber notificações
+-- (um por aparelho/navegador; "owner" é o perfil logado nele)
+-- ============================================================
+create table if not exists public.push_subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  owner text not null check (owner in ('heitor', 'leticia')),
+  endpoint text not null unique,
+  p256dh text not null,
+  auth text not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists push_subscriptions_owner_idx on public.push_subscriptions (owner);
+
+-- ============================================================
 -- trigger para manter updated_at em dia
 -- ============================================================
 create or replace function public.set_updated_at()
@@ -92,6 +107,11 @@ create trigger ratings_set_updated_at
 -- ============================================================
 alter table public.titles enable row level security;
 alter table public.ratings enable row level security;
+alter table public.push_subscriptions enable row level security;
+
+drop policy if exists "push_subscriptions_all_access" on public.push_subscriptions;
+create policy "push_subscriptions_all_access" on public.push_subscriptions
+  for all using (true) with check (true);
 
 drop policy if exists "titles_all_access" on public.titles;
 create policy "titles_all_access" on public.titles

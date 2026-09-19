@@ -78,7 +78,7 @@ PC sem precisar abrir o navegador.
   dá pra escolher o outro manualmente.
 - Pra adicionar um título, busca por nome (via TMDB) e escolhe a categoria (filme, série,
   desenho, anime, documentário...).
-- Cada título tem um **status compartilhado**: Quero ver / Assistindo / Já vimos juntos /
+- Cada título tem um **status compartilhado**: Temos que ver juntos / Assistindo / Já vimos juntos /
   Recomendo (quando um dos dois assistiu sozinho e quer indicar pro outro).
 - Cada pessoa pode dar sua **nota, comentário e data** que assistiu, independente da nota
   do outro — dá pra ver os dois lados na tela de detalhe do título.
