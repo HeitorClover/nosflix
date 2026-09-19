@@ -9,6 +9,7 @@ import '../models/title_model.dart';
 import '../models/watch_status.dart';
 import '../providers/profile_provider.dart';
 import '../providers/titles_provider.dart';
+import '../widgets/nosflix_widgets.dart';
 
 RatingModel? _findRating(List<RatingModel> ratings, Profile owner) {
   for (final r in ratings) {
@@ -30,93 +31,138 @@ class TitleDetailScreen extends ConsumerWidget {
         initialTitle;
     final ratingsAsync = ref.watch(ratingsForTitleProvider(title.id));
     final profile = ref.watch(profileProvider).profile;
+    final scheme = Theme.of(context).colorScheme;
+    final heroImage = title.backdropUrl ?? title.posterUrl;
 
     return Scaffold(
-      body: CustomScrollView(
-        slivers: [
-          SliverAppBar(
-            expandedHeight: 220,
-            pinned: true,
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.delete_outline),
-                onPressed: () => _confirmDelete(context, ref),
+      body: AppBackground(
+        child: CustomScrollView(
+          slivers: [
+            SliverAppBar(
+              expandedHeight: 320,
+              pinned: true,
+              backgroundColor: context.nx.base,
+              leading: GlassIconButton(
+                icon: Icons.arrow_back_rounded,
+                tooltip: 'Voltar',
+                onPressed: () => Navigator.of(context).maybePop(),
               ),
-            ],
-            flexibleSpace: FlexibleSpaceBar(
-              background: title.backdropUrl != null
-                  ? CachedNetworkImage(imageUrl: title.backdropUrl!, fit: BoxFit.cover)
-                  : Container(color: Theme.of(context).colorScheme.surfaceContainerHigh),
-            ),
-          ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title.title, style: Theme.of(context).textTheme.headlineSmall),
-                  if (title.originalTitle != null && title.originalTitle != title.title)
-                    Text(title.originalTitle!, style: const TextStyle(color: Colors.grey)),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    children: [
-                      if (title.releaseYear != null) Chip(label: Text('${title.releaseYear}')),
-                      Chip(label: Text(title.category.label)),
-                      for (final g in title.genres.take(3)) Chip(label: Text(g)),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  _StatusSelector(title: title, profile: profile),
-                  if (title.status == WatchStatus.assistindo && title.mediaType == 'tv')
-                    _ProgressCard(
-                      key: ValueKey(title.id),
-                      title: title,
-                    ),
-                  if (title.status == WatchStatus.recomendo && title.recommendedBy != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Text(
-                        '💡 Indicação de ${title.recommendedBy == 'heitor' ? 'Heitor' : 'Leticia'}',
-                        style: const TextStyle(fontStyle: FontStyle.italic),
+              actions: [
+                GlassIconButton(
+                  icon: Icons.delete_outline_rounded,
+                  tooltip: 'Remover',
+                  onPressed: () => _confirmDelete(context, ref),
+                ),
+                const SizedBox(width: 6),
+              ],
+              flexibleSpace: FlexibleSpaceBar(
+                background: heroImage == null
+                    ? Container(color: scheme.surfaceContainerHigh)
+                    : ShaderMask(
+                        blendMode: BlendMode.dstIn,
+                        shaderCallback: (rect) => const LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          stops: [0.45, 1],
+                          colors: [Colors.black, Colors.transparent],
+                        ).createShader(rect),
+                        child: CachedNetworkImage(
+                          imageUrl: heroImage,
+                          fit: BoxFit.cover,
+                          alignment: Alignment.topCenter,
+                        ),
                       ),
-                    ),
-                  if (title.overview != null && title.overview!.isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    Text('Sinopse', style: Theme.of(context).textTheme.titleMedium),
-                    const SizedBox(height: 4),
-                    Text(title.overview!),
-                  ],
-                  const SizedBox(height: 24),
-                  Text('Avaliações', style: Theme.of(context).textTheme.titleMedium),
-                  const SizedBox(height: 8),
-                  ratingsAsync.when(
-                    loading: () => const Center(child: CircularProgressIndicator()),
-                    error: (e, _) => Text('Erro ao carregar avaliações: $e'),
-                    data: (ratings) => Column(
+              ),
+            ),
+            SliverToBoxAdapter(
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 720),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 40),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        for (final p in Profile.values)
-                          _RatingCard(
-                            titleId: title.id,
-                            owner: p,
-                            existing: _findRating(ratings, p),
-                            editable: profile == p,
+                        Text(title.title, style: Theme.of(context).textTheme.headlineMedium),
+                        if (title.originalTitle != null && title.originalTitle != title.title)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Text(
+                              title.originalTitle!,
+                              style: TextStyle(color: scheme.onSurfaceVariant, fontStyle: FontStyle.italic),
+                            ),
                           ),
+                        const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            if (title.releaseYear != null) _MetaPill('${title.releaseYear}'),
+                            _MetaPill(title.category.label, icon: title.category.icon, highlight: true),
+                            for (final g in title.genres.take(3)) _MetaPill(g),
+                          ],
+                        ),
+                        const SizedBox(height: 22),
+                        _StatusSelector(title: title, profile: profile),
+                        if (title.status == WatchStatus.assistindo && title.mediaType == 'tv')
+                          _ProgressCard(key: ValueKey(title.id), title: title),
+                        if (title.status == WatchStatus.recomendo && title.recommendedBy != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 14),
+                            child: Row(
+                              children: [
+                                Icon(Icons.campaign_rounded, size: 18, color: scheme.secondary),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Indicação de ${title.recommendedBy == 'heitor' ? 'Heitor' : 'Leticia'}',
+                                  style: TextStyle(color: scheme.secondary, fontWeight: FontWeight.w600),
+                                ),
+                              ],
+                            ),
+                          ),
+                        if (title.overview != null && title.overview!.isNotEmpty) ...[
+                          const SizedBox(height: 28),
+                          const SectionTitle('Sinopse'),
+                          const SizedBox(height: 10),
+                          Text(
+                            title.overview!,
+                            style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.85), height: 1.5, fontSize: 15),
+                          ),
+                        ],
+                        const SizedBox(height: 28),
+                        const SectionTitle('Avaliações'),
+                        const SizedBox(height: 12),
+                        ratingsAsync.when(
+                          loading: () => const Center(child: CircularProgressIndicator()),
+                          error: (e, _) => Text('Erro ao carregar avaliações: $e'),
+                          data: (ratings) => Column(
+                            children: [
+                              for (final p in Profile.values)
+                                _RatingCard(
+                                  titleId: title.id,
+                                  owner: p,
+                                  existing: _findRating(ratings, p),
+                                  editable: profile == p,
+                                ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Center(
+                          child: Text(
+                            'Adicionado por ${title.addedBy == 'heitor' ? 'Heitor' : 'Leticia'} em '
+                            '${DateFormat('dd/MM/yyyy').format(title.createdAt)}',
+                            style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12),
+                          ),
+                        ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 24),
-                  Text(
-                    'Adicionado por ${title.addedBy == 'heitor' ? 'Heitor' : 'Leticia'} em '
-                    '${DateFormat('dd/MM/yyyy').format(title.createdAt)}',
-                    style: const TextStyle(color: Colors.grey, fontSize: 12),
-                  ),
-                ],
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -140,6 +186,36 @@ class TitleDetailScreen extends ConsumerWidget {
   }
 }
 
+class _MetaPill extends StatelessWidget {
+  final String text;
+  final IconData? icon;
+  final bool highlight;
+  const _MetaPill(this.text, {this.icon, this.highlight = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final color = highlight ? scheme.secondary : scheme.onSurface.withValues(alpha: 0.8);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: highlight ? scheme.primary.withValues(alpha: 0.18) : Colors.white.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 5),
+          ],
+          Text(text, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: color)),
+        ],
+      ),
+    );
+  }
+}
+
 class _StatusSelector extends ConsumerWidget {
   final TitleModel title;
   final Profile? profile;
@@ -152,11 +228,11 @@ class _StatusSelector extends ConsumerWidget {
       runSpacing: 8,
       children: [
         for (final s in WatchStatus.values)
-          ChoiceChip(
-            avatar: Icon(s.icon, size: 16),
-            label: Text(s.label),
+          ChoicePill(
+            icon: s.icon,
+            label: s.label,
             selected: title.status == s,
-            onSelected: (_) async {
+            onTap: () async {
               final recommendedBy = s == WatchStatus.recomendo ? profile?.name : null;
               await ref.read(titlesProvider.notifier).updateStatus(
                     title.id,
@@ -203,36 +279,67 @@ class _ProgressCardState extends ConsumerState<_ProgressCard> {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(top: 12),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Column(
-          children: [
-            _stepper('Temporada', _season, (d) => _change(season: d)),
-            _stepper('Episódio', _episode, (d) => _change(episode: d)),
-          ],
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      margin: const EdgeInsets.only(top: 16),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: scheme.primary.withValues(alpha: 0.4)),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [scheme.primary.withValues(alpha: 0.22), scheme.primary.withValues(alpha: 0.05)],
         ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.play_circle_fill_rounded, size: 18, color: scheme.secondary),
+              const SizedBox(width: 8),
+              Text('Onde paramos', style: TextStyle(fontWeight: FontWeight.w700, color: scheme.secondary)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(child: _stepper('Temporada', _season, (d) => _change(season: d))),
+              Container(width: 1, height: 64, color: Colors.white12),
+              Expanded(child: _stepper('Episódio', _episode, (d) => _change(episode: d))),
+            ],
+          ),
+        ],
       ),
     );
   }
 
   Widget _stepper(String label, int value, void Function(int delta) onChange) {
-    return Row(
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
       children: [
-        Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
-        const Spacer(),
-        IconButton(
-          icon: const Icon(Icons.remove_circle_outline),
-          onPressed: value > 1 ? () => onChange(-1) : null,
-        ),
-        SizedBox(
-          width: 32,
-          child: Text('$value', textAlign: TextAlign.center, style: const TextStyle(fontSize: 16)),
-        ),
-        IconButton(
-          icon: const Icon(Icons.add_circle_outline),
-          onPressed: () => onChange(1),
+        Text(label, style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.remove_circle_outline_rounded),
+              onPressed: value > 1 ? () => onChange(-1) : null,
+            ),
+            SizedBox(
+              width: 44,
+              child: Text(
+                '$value',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800),
+              ),
+            ),
+            IconButton(
+              icon: Icon(Icons.add_circle_rounded, color: scheme.primary),
+              onPressed: () => onChange(1),
+            ),
+          ],
         ),
       ],
     );
@@ -306,93 +413,97 @@ class _RatingCardState extends ConsumerState<_RatingCard> {
   @override
   Widget build(BuildContext context) {
     final color = widget.owner.seedColor;
-    return Card(
+    final muted = Theme.of(context).colorScheme.onSurfaceVariant;
+    return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                CircleAvatar(radius: 12, backgroundColor: color, child: Text(
-                  widget.owner.displayName[0],
-                  style: const TextStyle(fontSize: 11, color: Colors.white),
-                )),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withValues(alpha: widget.editable ? 0.45 : 0.15)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              ProfileAvatar(profile: widget.owner, radius: 14),
+              const SizedBox(width: 10),
+              Text(widget.owner.displayName, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+              if (widget.editable) ...[
                 const SizedBox(width: 8),
-                Text(widget.owner.displayName, style: const TextStyle(fontWeight: FontWeight.w600)),
-                const Spacer(),
-                if (widget.editable && _saving) const SizedBox(
-                  width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2),
-                ),
+                Text('você', style: TextStyle(color: muted, fontSize: 12)),
               ],
-            ),
-            const SizedBox(height: 8),
-            IgnorePointer(
-              ignoring: !widget.editable,
-              child: Opacity(
-                opacity: widget.editable ? 1 : 0.6,
-                child: RatingBar.builder(
-                  initialRating: _rating,
-                  minRating: 0,
-                  allowHalfRating: true,
-                  itemCount: 5,
-                  itemSize: 26,
-                  itemBuilder: (context, _) => Icon(Icons.star_rounded, color: color),
-                  onRatingUpdate: (value) {
-                    setState(() => _rating = value);
-                    _save();
-                  },
-                ),
-              ),
-            ),
-            if (widget.editable) ...[
-              const SizedBox(height: 8),
-              TextField(
-                controller: _commentController,
-                enabled: widget.editable,
-                minLines: 1,
-                maxLines: 3,
-                decoration: const InputDecoration(
-                  hintText: 'Comentário...',
-                  isDense: true,
-                ),
-                onSubmitted: (_) => _save(),
-                onTapOutside: (_) => _save(),
-              ),
-              const SizedBox(height: 8),
-              InkWell(
-                onTap: () async {
-                  await _pickDate();
-                  await _save();
+              const Spacer(),
+              if (widget.editable && _saving)
+                const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          IgnorePointer(
+            ignoring: !widget.editable,
+            child: Opacity(
+              opacity: widget.editable ? 1 : 0.7,
+              child: RatingBar.builder(
+                initialRating: _rating,
+                minRating: 0,
+                allowHalfRating: true,
+                itemCount: 5,
+                itemSize: 30,
+                unratedColor: Colors.white24,
+                itemBuilder: (context, _) => Icon(Icons.star_rounded, color: color),
+                onRatingUpdate: (value) {
+                  setState(() => _rating = value);
+                  _save();
                 },
+              ),
+            ),
+          ),
+          if (widget.editable) ...[
+            const SizedBox(height: 12),
+            TextField(
+              controller: _commentController,
+              minLines: 1,
+              maxLines: 3,
+              decoration: const InputDecoration(hintText: 'Escreva um comentário...', isDense: true),
+              onSubmitted: (_) => _save(),
+              onTapOutside: (_) => _save(),
+            ),
+            const SizedBox(height: 10),
+            InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: () async {
+                await _pickDate();
+                await _save();
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
                 child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.calendar_today_outlined, size: 14),
+                    Icon(Icons.calendar_today_rounded, size: 14, color: color),
                     const SizedBox(width: 6),
                     Text(
-                      _watchedAt == null
-                          ? 'Quando assistiu?'
-                          : DateFormat('dd/MM/yyyy').format(_watchedAt!),
-                      style: const TextStyle(fontSize: 12),
+                      _watchedAt == null ? 'Quando assistiu?' : DateFormat('dd/MM/yyyy').format(_watchedAt!),
+                      style: const TextStyle(fontSize: 13),
                     ),
                   ],
                 ),
               ),
-            ] else if (_commentController.text.isNotEmpty || _watchedAt != null) ...[
-              const SizedBox(height: 6),
-              if (_commentController.text.isNotEmpty) Text(_commentController.text),
-              if (_watchedAt != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                    DateFormat('dd/MM/yyyy').format(_watchedAt!),
-                    style: const TextStyle(fontSize: 12, color: Colors.grey),
-                  ),
+            ),
+          ] else if (_commentController.text.isNotEmpty || _watchedAt != null) ...[
+            const SizedBox(height: 8),
+            if (_commentController.text.isNotEmpty) Text(_commentController.text),
+            if (_watchedAt != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  DateFormat('dd/MM/yyyy').format(_watchedAt!),
+                  style: TextStyle(fontSize: 12, color: muted),
                 ),
-            ],
+              ),
           ],
-        ),
+        ],
       ),
     );
   }

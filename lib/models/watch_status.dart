@@ -51,6 +51,15 @@ extension TitleCategoryX on TitleCategory {
         TitleCategory.outro => 'Outro',
       };
 
+  IconData get icon => switch (this) {
+        TitleCategory.filme => Icons.movie_outlined,
+        TitleCategory.serie => Icons.tv_outlined,
+        TitleCategory.desenho => Icons.brush_outlined,
+        TitleCategory.anime => Icons.auto_awesome_outlined,
+        TitleCategory.documentario => Icons.travel_explore_outlined,
+        TitleCategory.outro => Icons.category_outlined,
+      };
+
   static TitleCategory fromValue(String value) => TitleCategory.values.firstWhere(
         (c) => c.value == value,
         orElse: () => TitleCategory.outro,

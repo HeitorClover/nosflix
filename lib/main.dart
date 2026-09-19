@@ -6,6 +6,7 @@ import 'data/supabase_client.dart';
 import 'providers/profile_provider.dart';
 import 'screens/home_screen.dart';
 import 'screens/profile_select_screen.dart';
+import 'widgets/nosflix_widgets.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -25,9 +26,7 @@ class NosflixApp extends ConsumerWidget {
     return MaterialApp(
       title: 'Nosflix',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.light(profile),
-      darkTheme: AppTheme.dark(profile),
-      themeMode: ThemeMode.system,
+      theme: AppTheme.build(profile),
       home: profileState.loading
           ? const _SplashScreen()
           : (profileState.profile == null ? const ProfileSelectScreen() : const HomeScreen()),
@@ -40,6 +39,10 @@ class _SplashScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    return const Scaffold(
+      body: AppBackground(
+        child: Center(child: Wordmark(size: 56)),
+      ),
+    );
   }
 }
