@@ -15,6 +15,7 @@ import '../widgets/nosflix_widgets.dart';
 import '../widgets/title_card.dart';
 import 'add_title_screen.dart';
 import 'movie_night_screen.dart';
+import 'notifications_screen.dart';
 import 'stats_screen.dart';
 import 'title_detail_screen.dart';
 
@@ -123,46 +124,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     super.dispose();
   }
 
-  Future<void> _onBellTap(Profile profile) async {
-    final messenger = ScaffoldMessenger.of(context);
-    if (_pushStatus == PushStatus.off) {
-      try {
-        final result = await PushService.enable(profile);
-        if (!mounted) return;
-        setState(() => _pushStatus = result);
-        messenger.showSnackBar(SnackBar(
-          content: Text(result == PushStatus.on
-              ? 'Notificações ativadas neste aparelho!'
-              : 'Não foi possível ativar as notificações.'),
-        ));
-      } catch (e) {
-        if (!mounted) return;
-        setState(() => _pushStatus = PushService.status());
-        messenger.showSnackBar(SnackBar(content: Text('Erro ao ativar as notificações: $e')));
-      }
-    } else if (_pushStatus == PushStatus.needsInstall) {
-      await showDialog<void>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Instale o Nosflix'),
-          content: const Text(
-            'No iPhone, as notificações só funcionam com o app instalado:\n\n'
-            '1. Toque no botão Compartilhar do Safari\n'
-            '2. Escolha "Adicionar à Tela de Início"\n'
-            '3. Abra o Nosflix pelo ícone novo e toque no sino',
-          ),
-          actions: [
-            FilledButton(onPressed: () => Navigator.pop(context), child: const Text('Entendi')),
-          ],
-        ),
-      );
-    } else if (_pushStatus == PushStatus.blocked) {
-      messenger.showSnackBar(const SnackBar(
-        content: Text('As notificações estão bloqueadas. Libere nas configurações do navegador.'),
-      ));
-    } else {
-      messenger.showSnackBar(const SnackBar(content: Text('Notificações já estão ativadas neste aparelho.')));
-    }
+  Future<void> _openAlerts() async {
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const NotificationsScreen()));
+    if (mounted) setState(() => _pushStatus = PushService.status());
   }
 
   void _open(TitleModel title) {
@@ -184,6 +148,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         onAdd: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AddTitleScreen())),
         onNight: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const MovieNightScreen())),
         onStats: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const StatsScreen())),
+        onAlerts: _openAlerts,
       ),
       body: AppBackground(
         photo: BackdropPhoto.home,
@@ -194,7 +159,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               _Header(
                 profile: profile,
                 pushStatus: _pushStatus,
-                onBell: () => _onBellTap(profile),
+                onBell: _openAlerts,
                 onSwitch: () => ref.read(profileProvider.notifier).signOut(),
               ),
               Padding(
@@ -716,53 +681,68 @@ class _FilterButton extends StatelessWidget {
   }
 }
 
-/// Barra de navegação flutuante: início, adicionar (botão central) e estatísticas.
+/// Barra de navegação flutuante. Fundo quase opaco e borda na cor do perfil,
+/// pra não se confundir com o conteúdo que passa por baixo.
 class _NavBar extends StatelessWidget {
   final VoidCallback onAdd;
   final VoidCallback onNight;
   final VoidCallback onStats;
-  const _NavBar({required this.onAdd, required this.onNight, required this.onStats});
+  final VoidCallback onAlerts;
+  const _NavBar({required this.onAdd, required this.onNight, required this.onStats, required this.onAlerts});
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+        padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
         child: Center(
           heightFactor: 1,
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420),
-            child: GlassCard(
-              radius: 32,
-              blur: 24,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  _NavItem(icon: Icons.home_rounded, label: 'Início', selected: true, onTap: () {}),
-                  _NavItem(icon: Icons.theaters_rounded, label: 'Noite', selected: false, onTap: onNight),
-                  GestureDetector(
-                    onTap: onAdd,
-                    child: Container(
-                      width: 56,
-                      height: 56,
-                      decoration: BoxDecoration(
-                        gradient: context.nx.gradient,
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: scheme.primary.withValues(alpha: 0.55),
-                            blurRadius: 20,
-                            offset: const Offset(0, 6),
-                          ),
-                        ],
-                      ),
-                      child: const Icon(Icons.add_rounded, color: Colors.white, size: 30),
-                    ),
-                  ),
-                  _NavItem(icon: Icons.favorite_rounded, label: 'Nós', selected: false, onTap: onStats),
+            constraints: const BoxConstraints(maxWidth: 440),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Color.lerp(scheme.surfaceContainerHigh, Colors.black, 0.35)!.withValues(alpha: 0.96),
+                borderRadius: BorderRadius.circular(30),
+                border: Border.all(color: scheme.primary.withValues(alpha: 0.45), width: 1.2),
+                boxShadow: [
+                  BoxShadow(color: Colors.black.withValues(alpha: 0.7), blurRadius: 28, offset: const Offset(0, 8)),
+                  BoxShadow(color: scheme.primary.withValues(alpha: 0.18), blurRadius: 24),
                 ],
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(child: _NavItem(icon: Icons.home_rounded, label: 'Início', selected: true, onTap: () {})),
+                    Expanded(child: _NavItem(icon: Icons.theaters_rounded, label: 'Noite', selected: false, onTap: onNight)),
+                    GestureDetector(
+                      onTap: onAdd,
+                      child: Container(
+                        width: 54,
+                        height: 54,
+                        decoration: BoxDecoration(
+                          gradient: context.nx.gradient,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white.withValues(alpha: 0.35)),
+                          boxShadow: [
+                            BoxShadow(
+                              color: scheme.primary.withValues(alpha: 0.6),
+                              blurRadius: 18,
+                              offset: const Offset(0, 5),
+                            ),
+                          ],
+                        ),
+                        child: const Icon(Icons.add_rounded, color: Colors.white, size: 30),
+                      ),
+                    ),
+                    Expanded(child: _NavItem(icon: Icons.favorite_rounded, label: 'Nós', selected: false, onTap: onStats)),
+                    Expanded(
+                      child: _NavItem(icon: Icons.notifications_rounded, label: 'Avisos', selected: false, onTap: onAlerts),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -782,18 +762,26 @@ class _NavItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final color = selected ? scheme.primary : scheme.onSurfaceVariant;
+    final color = selected ? scheme.primary : scheme.onSurface.withValues(alpha: 0.82);
     return InkWell(
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(18),
       onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? scheme.primary.withValues(alpha: 0.2) : null,
+          borderRadius: BorderRadius.circular(18),
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: color),
+            Icon(icon, color: color, size: 24),
             const SizedBox(height: 2),
-            Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: color)),
+            Text(
+              label,
+              maxLines: 1,
+              style: TextStyle(fontSize: 11, fontWeight: selected ? FontWeight.w800 : FontWeight.w600, color: color),
+            ),
           ],
         ),
       ),

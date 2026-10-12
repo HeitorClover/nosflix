@@ -186,6 +186,28 @@ exception when duplicate_object then null;
 end $$;
 
 -- ============================================================
+-- notification_prefs: o que cada pessoa quer receber (só o que foi mudado;
+-- o resto usa o padrão do app e das Edge Functions)
+-- ============================================================
+create table if not exists public.notification_prefs (
+  owner text primary key check (owner in ('heitor', 'leticia')),
+  prefs jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.notification_prefs enable row level security;
+
+drop policy if exists "notification_prefs_all_access" on public.notification_prefs;
+create policy "notification_prefs_all_access" on public.notification_prefs
+  for all using (true) with check (true);
+
+do $$
+begin
+  alter publication supabase_realtime add table public.notification_prefs;
+exception when duplicate_object then null;
+end $$;
+
+-- ============================================================
 -- Row Level Security
 -- Este app não usa Supabase Auth (é só vocês dois, com um seletor
 -- de perfil local no app). A anon key fica embutida no build, então

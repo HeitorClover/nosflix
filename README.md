@@ -85,8 +85,10 @@ PC sem precisar abrir o navegador.
 - **Novidades** na home (episódio/temporada nova das séries que vocês acompanham), trailer e
   "Ver saga" (coleção do filme, só quando você toca) no detalhe do título.
 - **Offline**: sem internet o app mostra o último catálogo salvo no aparelho.
-- **Avisos push**: além da recomendação, avisa quando o outro avança um episódio de uma série
-  que assiste sozinho(a) ou comenta um episódio (sem o texto, pra não dar spoiler).
+- **Aba Avisos**: cada um escolhe o que quer receber (comentários, episódios, obras adicionadas,
+  recomendações, sorteio, votação, série principal). As escolhas ficam no banco
+  (`notification_prefs`) e as Edge Functions respeitam o que quem recebe desligou. Os avisos
+  de comentário nunca mostram o texto, pra não dar spoiler.
 - A tela de detalhe mostra **onde assistir** (streaming/aluguel no Brasil) e a home tem
   filtro por categoria, ordenação e uma tela de **estatísticas**.
 

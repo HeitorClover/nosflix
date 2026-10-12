@@ -1,9 +1,11 @@
+import 'dart:io';
 import 'dart:math';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nosflix/core/achievements.dart';
 import 'package:nosflix/core/memories.dart';
 import 'package:nosflix/core/movie_night.dart';
 import 'package:nosflix/core/news.dart';
+import 'package:nosflix/core/notification_settings.dart';
 import 'package:nosflix/core/progress.dart';
 import 'package:nosflix/core/theme/app_theme.dart';
 import 'package:nosflix/models/audience.dart';
@@ -50,6 +52,43 @@ RatingModel _rating(String titleId, String owner, {double? value, DateTime? watc
 }
 
 void main() {
+  group('avisos', () {
+    test('padrões: ligado onde pedido, desligado nos demais', () {
+      for (final key in [
+        NotifKey.seriesComment,
+        NotifKey.episodeComment,
+        NotifKey.episodeProgress,
+        NotifKey.titleAddedBoth,
+        NotifKey.recommend,
+        NotifKey.draw,
+        NotifKey.mainChanged,
+      ]) {
+        expect(prefEnabled(const {}, key), isTrue, reason: key);
+      }
+      for (final key in [NotifKey.titleAddedThem, NotifKey.titleAddedMe, NotifKey.pickAdded]) {
+        expect(prefEnabled(const {}, key), isFalse, reason: key);
+      }
+    });
+
+    test('o que a pessoa salvou vale mais que o padrão', () {
+      expect(prefEnabled({NotifKey.draw: false}, NotifKey.draw), isFalse);
+      expect(prefEnabled({NotifKey.pickAdded: true}, NotifKey.pickAdded), isTrue);
+    });
+
+    test('padrões do app são os mesmos da Edge Function', () {
+      final ts = File('supabase/functions/_shared/push.ts').readAsStringSync();
+      final block = RegExp(r'DEFAULT_PREFS[^{]*\{([^}]*)\}').firstMatch(ts)!.group(1)!;
+      final fromTs = {
+        for (final m in RegExp(r'(\w+):\s*(true|false)').allMatches(block)) m.group(1)!: m.group(2) == 'true',
+      };
+      final fromApp = {
+        for (final g in notificationGroups(Profile.heitor))
+          for (final setting in g.settings) setting.key: setting.defaultValue,
+      };
+      expect(fromTs, fromApp);
+    });
+  });
+
   spoilerSoloTests();
   group('Audience', () {
     test('rótulos do ponto de vista de cada perfil', () {

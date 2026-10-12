@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../core/push/push_service.dart';
 import '../core/theme/app_theme.dart';
 import '../data/tmdb_service.dart';
 import '../models/audience.dart';
@@ -71,7 +72,7 @@ class _AddTitleScreenState extends ConsumerState<AddTitleScreen> {
     final profile = ref.read(profileProvider).profile;
     if (profile == null) return;
 
-    await ref.read(titlesProvider.notifier).addTitle({
+    final created = await ref.read(titlesProvider.notifier).addTitle({
       'tmdb_id': r.id,
       'media_type': r.mediaType,
       'category': category.value,
@@ -87,6 +88,7 @@ class _AddTitleScreenState extends ConsumerState<AddTitleScreen> {
       'recommended_by': null,
       'added_by': profile.name,
     });
+    PushService.notifyTitleAdded(titleId: created.id, from: profile);
 
     if (mounted) Navigator.of(context).pop();
   }

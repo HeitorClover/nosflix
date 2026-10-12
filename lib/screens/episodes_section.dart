@@ -540,9 +540,14 @@ class _MainToggle extends ConsumerWidget {
     final scheme = Theme.of(context).colorScheme;
     return TextButton.icon(
       style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
-      onPressed: () => isMain
-          ? repo.clearMainTitle(me.name)
-          : repo.setMainTitle(owner: me.name, titleId: title.id),
+      onPressed: () async {
+        if (isMain) {
+          await repo.clearMainTitle(me.name);
+        } else {
+          await repo.setMainTitle(owner: me.name, titleId: title.id);
+          PushService.notifyMainTitle(titleId: title.id, from: me);
+        }
+      },
       icon: Icon(isMain ? Icons.star_rounded : Icons.star_border_rounded, size: 20, color: scheme.secondary),
       label: Text(isMain ? 'Principal' : 'Tornar principal'),
     );

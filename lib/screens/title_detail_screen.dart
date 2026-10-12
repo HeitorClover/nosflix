@@ -423,6 +423,7 @@ class _RatingCardState extends ConsumerState<_RatingCard> {
   DateTime? _watchedAt;
   bool _saving = false;
   bool _dirty = false;
+  late String _lastSavedComment = widget.existing?.comment?.trim() ?? '';
   Timer? _debounce;
 
   @override
@@ -448,10 +449,12 @@ class _RatingCardState extends ConsumerState<_RatingCard> {
     _debounce = Timer(const Duration(milliseconds: 700), _save);
   }
 
-  Future<void> _persist() {
+  Future<void> _persist() async {
     _dirty = false;
     final comment = _commentController.text.trim();
-    return _repo.upsertRating(RatingModel(
+    final isFirstComment = _lastSavedComment.isEmpty && comment.isNotEmpty;
+    _lastSavedComment = comment;
+    await _repo.upsertRating(RatingModel(
       id: widget.existing?.id ?? '',
       titleId: widget.titleId,
       owner: widget.owner.name,
@@ -461,6 +464,8 @@ class _RatingCardState extends ConsumerState<_RatingCard> {
       createdAt: widget.existing?.createdAt ?? DateTime.now(),
       updatedAt: DateTime.now(),
     ));
+    // Só avisa no primeiro comentário, pra não virar spam a cada edição.
+    if (isFirstComment) PushService.notifySeriesComment(titleId: widget.titleId, from: widget.owner);
   }
 
   Future<void> _save() async {
@@ -714,7 +719,7 @@ class _CollectionSheetState extends ConsumerState<_CollectionSheet> {
   Future<void> _add(TmdbSearchResult r) async {
     final profile = widget.profile;
     if (profile == null) return;
-    await ref.read(titlesProvider.notifier).addTitle({
+    final created = await ref.read(titlesProvider.notifier).addTitle({
       'tmdb_id': r.id,
       'media_type': 'movie',
       'category': widget.title.category.value,
@@ -729,6 +734,7 @@ class _CollectionSheetState extends ConsumerState<_CollectionSheet> {
       'audience': Audience.juntos.value,
       'added_by': profile.name,
     });
+    PushService.notifyTitleAdded(titleId: created.id, from: profile);
   }
 
   @override

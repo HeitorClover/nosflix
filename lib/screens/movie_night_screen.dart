@@ -3,6 +3,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/movie_night.dart';
+import '../core/push/push_service.dart';
 import '../core/theme/app_theme.dart';
 import '../models/pick_model.dart';
 import '../models/title_model.dart';
@@ -52,6 +53,8 @@ class _MovieNightScreenState extends ConsumerState<MovieNightScreen> {
           _spinning = false;
           _landed = true;
         });
+        final me = ref.read(profileProvider).profile;
+        if (me != null) PushService.notifyDraw(titleId: winner.id, from: me);
         return;
       }
       setState(() => _shown = candidates[ticks % candidates.length]);
@@ -358,7 +361,9 @@ class _PickSheet extends ConsumerWidget {
                               if (selected) {
                                 repo.removePick(owner: me.name, titleId: t.id);
                               } else if (!full) {
-                                repo.addPick(owner: me.name, titleId: t.id);
+                                repo.addPick(owner: me.name, titleId: t.id).then(
+                                      (_) => PushService.notifyPick(titleId: t.id, from: me),
+                                    );
                               }
                             },
                             child: Stack(

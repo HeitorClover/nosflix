@@ -82,6 +82,19 @@ class TitlesRepository {
     await supabase.from('main_titles').delete().eq('owner', owner);
   }
 
+  /// Preferências de notificação de [owner], ao vivo (só o que foi mudado).
+  Stream<Map<String, dynamic>> watchNotificationPrefs(String owner) {
+    return supabase
+        .from('notification_prefs')
+        .stream(primaryKey: ['owner'])
+        .eq('owner', owner)
+        .map((rows) => rows.isEmpty ? <String, dynamic>{} : Map<String, dynamic>.from(rows.first['prefs'] as Map));
+  }
+
+  Future<void> saveNotificationPrefs(String owner, Map<String, dynamic> prefs) async {
+    await supabase.from('notification_prefs').upsert({'owner': owner, 'prefs': prefs}, onConflict: 'owner');
+  }
+
   Future<void> addPick({required String owner, required String titleId}) async {
     await supabase.from('picks').upsert({'owner': owner, 'title_id': titleId}, onConflict: 'owner,title_id');
   }

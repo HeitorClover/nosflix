@@ -22,10 +22,12 @@ class TitlesNotifier extends AsyncNotifier<List<TitleModel>> {
     state = await AsyncValue.guard(() => ref.read(titlesRepositoryProvider).fetchAll());
   }
 
-  Future<void> addTitle(Map<String, dynamic> json) async {
+  /// Adiciona o título e devolve o registro criado.
+  Future<TitleModel> addTitle(Map<String, dynamic> json) async {
     final repo = ref.read(titlesRepositoryProvider);
-    await repo.insert(json);
+    final created = await repo.insert(json);
     await refresh();
+    return created;
   }
 
   Future<void> updateStatus(String titleId, String status, {String? recommendedBy}) async {
@@ -130,4 +132,9 @@ final newsProvider = FutureProvider<List<NewsItem>>((ref) async {
 /// Série principal de cada pessoa (o campo `owner` diz de quem é).
 final mainTitlesProvider = StreamProvider<List<PickModel>>((ref) {
   return ref.read(titlesRepositoryProvider).watchMainTitles();
+});
+
+/// Preferências de notificação de [owner] (o nome do perfil), ao vivo.
+final notificationPrefsProvider = StreamProvider.family<Map<String, dynamic>, String>((ref, owner) {
+  return ref.read(titlesRepositoryProvider).watchNotificationPrefs(owner);
 });

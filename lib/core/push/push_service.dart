@@ -92,4 +92,24 @@ class PushService {
       // O dado já foi salvo; se o aviso falhar, não desfazemos nada.
     }
   }
+
+  /// Avisa que [from] comentou uma obra (sem o texto).
+  static Future<void> notifySeriesComment({required String titleId, required Profile from}) =>
+      _notifyActivity({'kind': 'series_comment', 'titleId': titleId, 'from': from.name});
+
+  /// Avisa que [from] adicionou uma obra ao catálogo.
+  static Future<void> notifyTitleAdded({required String titleId, required Profile from}) =>
+      _notifyActivity({'kind': 'title_added', 'titleId': titleId, 'from': from.name});
+
+  /// Avisa que [from] sorteou o que vão ver.
+  static Future<void> notifyDraw({required String titleId, required Profile from}) =>
+      _notifyActivity({'kind': 'draw', 'titleId': titleId, 'from': from.name});
+
+  /// Avisa que [from] escolheu um título na votação.
+  static Future<void> notifyPick({required String titleId, required Profile from}) =>
+      _notifyActivity({'kind': 'pick', 'titleId': titleId, 'from': from.name});
+
+  /// Avisa que [from] definiu a série principal.
+  static Future<void> notifyMainTitle({required String titleId, required Profile from}) =>
+      _notifyActivity({'kind': 'main', 'titleId': titleId, 'from': from.name});
 }
