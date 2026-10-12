@@ -1,26 +1,120 @@
+import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../core/theme/app_theme.dart';
 
-/// Fundo com brilho na cor do perfil, do topo até o preto-avermelhado/rosado.
+/// Fotos de fundo do app (ficam em images/).
+enum BackdropPhoto {
+  home('images/home.jpeg', Alignment(-0.1, -0.25)),
+  search('images/search.png', Alignment(0, -0.75));
+
+  final String asset;
+  final Alignment alignment;
+  const BackdropPhoto(this.asset, this.alignment);
+}
+
+/// Fundo do app. Sem [photo], é só o degradê do perfil. Com [photo], a foto
+/// fica quase toda coberta pela cor do perfil (vermelho/rosa) e some no escuro
+/// embaixo, pra o conteúdo continuar legível.
 class AppBackground extends StatelessWidget {
   final Widget child;
-  const AppBackground({super.key, required this.child});
+  final BackdropPhoto? photo;
+  const AppBackground({super.key, required this.child, this.photo});
 
   @override
   Widget build(BuildContext context) {
     final nx = context.nx;
+    final scheme = Theme.of(context).colorScheme;
     return SizedBox.expand(
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [nx.glow, nx.base],
-            stops: const [0, 0.55],
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [nx.glow, nx.base],
+                stops: const [0, 0.55],
+              ),
+            ),
+          ),
+          if (photo != null) ...[
+            Image.asset(
+              photo!.asset,
+              fit: BoxFit.cover,
+              alignment: photo!.alignment,
+              errorBuilder: (_, _, _) => const SizedBox.shrink(),
+            ),
+            // Banho de cor do perfil por cima da foto.
+            ColoredBox(color: scheme.primaryContainer.withValues(alpha: 0.62)),
+            DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    scheme.primary.withValues(alpha: 0.18),
+                    nx.base.withValues(alpha: 0.72),
+                    nx.base.withValues(alpha: 0.96),
+                  ],
+                  stops: const [0, 0.38, 0.72],
+                ),
+              ),
+            ),
+          ],
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+/// Cartão de vidro: fundo desfocado e translúcido com borda fina.
+class GlassCard extends StatelessWidget {
+  final Widget child;
+  final EdgeInsetsGeometry padding;
+  final double radius;
+  final double blur;
+  final Color? borderColor;
+  final VoidCallback? onTap;
+
+  const GlassCard({
+    super.key,
+    required this.child,
+    this.padding = const EdgeInsets.all(16),
+    this.radius = 24,
+    this.blur = 18,
+    this.borderColor,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final border = BorderRadius.circular(radius);
+    return ClipRRect(
+      borderRadius: border,
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: border,
+            border: Border.all(color: borderColor ?? Colors.white.withValues(alpha: 0.12)),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Colors.white.withValues(alpha: 0.11), Colors.white.withValues(alpha: 0.04)],
+            ),
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: border,
+              onTap: onTap,
+              child: Padding(padding: padding, child: child),
+            ),
           ),
         ),
-        child: child,
       ),
     );
   }
@@ -50,7 +144,7 @@ class Wordmark extends StatelessWidget {
   }
 }
 
-/// Bolinha com a inicial do perfil, em degradê.
+/// Foto de perfil redonda com aro em degradê (cai na inicial se faltar a imagem).
 class ProfileAvatar extends StatelessWidget {
   final Profile profile;
   final double radius;
@@ -58,18 +152,30 @@ class ProfileAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final ring = (radius * 0.12).clamp(1.5, 3.5);
     return Container(
       width: radius * 2,
       height: radius * 2,
-      alignment: Alignment.center,
+      padding: EdgeInsets.all(ring),
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         gradient: profile.gradient,
         boxShadow: [BoxShadow(color: profile.seedColor.withValues(alpha: 0.45), blurRadius: radius * 0.8)],
       ),
-      child: Text(
-        profile.displayName[0],
-        style: TextStyle(color: Colors.white, fontSize: radius * 0.95, fontWeight: FontWeight.w800),
+      child: ClipOval(
+        child: Image.asset(
+          profile.photoAsset,
+          fit: BoxFit.cover,
+          alignment: const Alignment(0, -0.2),
+          errorBuilder: (_, _, _) => Container(
+            alignment: Alignment.center,
+            color: profile.deepColor,
+            child: Text(
+              profile.displayName[0],
+              style: TextStyle(color: Colors.white, fontSize: radius * 0.95, fontWeight: FontWeight.w800),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -126,45 +232,6 @@ class ChoicePill extends StatelessWidget {
                 ),
               ),
             ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Botão flutuante em degradê com brilho.
-class GradientFab extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onPressed;
-
-  const GradientFab({super.key, required this.icon, required this.label, required this.onPressed});
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: context.nx.gradient,
-        borderRadius: BorderRadius.circular(999),
-        boxShadow: [BoxShadow(color: scheme.primary.withValues(alpha: 0.5), blurRadius: 22, offset: const Offset(0, 8))],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(999),
-          onTap: onPressed,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 15),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, color: Colors.white),
-                const SizedBox(width: 8),
-                Text(label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 15)),
-              ],
-            ),
           ),
         ),
       ),

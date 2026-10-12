@@ -65,4 +65,31 @@ class PushService {
       // A recomendação já foi salva; se o aviso falhar, não desfazemos nada.
     }
   }
+
+  /// Avisa a outra pessoa que [from] avançou o episódio de uma série que assiste sozinho(a).
+  static Future<void> notifyProgress({required String titleId, required Profile from}) =>
+      _notifyActivity({'kind': 'progress', 'titleId': titleId, 'from': from.name});
+
+  /// Avisa a outra pessoa que [from] comentou um episódio (sem o texto, pra não dar spoiler).
+  static Future<void> notifyEpisodeComment({
+    required String titleId,
+    required Profile from,
+    required int season,
+    required int episode,
+  }) =>
+      _notifyActivity({
+        'kind': 'comment',
+        'titleId': titleId,
+        'from': from.name,
+        'season': season,
+        'episode': episode,
+      });
+
+  static Future<void> _notifyActivity(Map<String, dynamic> body) async {
+    try {
+      await supabase.functions.invoke('notify-activity', body: body);
+    } catch (_) {
+      // O dado já foi salvo; se o aviso falhar, não desfazemos nada.
+    }
+  }
 }

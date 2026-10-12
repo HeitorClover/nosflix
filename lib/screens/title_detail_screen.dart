@@ -1,16 +1,23 @@
+import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../core/push/push_service.dart';
 import '../core/theme/app_theme.dart';
+import '../data/titles_repository.dart';
+import '../data/tmdb_service.dart';
+import '../models/audience.dart';
 import '../models/rating_model.dart';
 import '../models/title_model.dart';
+import '../models/tv_models.dart';
 import '../models/watch_status.dart';
 import '../providers/profile_provider.dart';
 import '../providers/titles_provider.dart';
 import '../widgets/nosflix_widgets.dart';
+import 'episodes_section.dart';
 
 RatingModel? _findRating(List<RatingModel> ratings, Profile owner) {
   for (final r in ratings) {
@@ -40,7 +47,7 @@ class TitleDetailScreen extends ConsumerWidget {
         child: CustomScrollView(
           slivers: [
             SliverAppBar(
-              expandedHeight: 320,
+              expandedHeight: 340,
               pinned: true,
               backgroundColor: context.nx.base,
               leading: GlassIconButton(
@@ -84,16 +91,53 @@ class TitleDetailScreen extends ConsumerWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(title.title, style: Theme.of(context).textTheme.headlineMedium),
-                        if (title.originalTitle != null && title.originalTitle != title.title)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 2),
-                            child: Text(
-                              title.originalTitle!,
-                              style: TextStyle(color: scheme.onSurfaceVariant, fontStyle: FontStyle.italic),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (title.posterUrl != null) ...[
+                              DecoratedBox(
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(18),
+                                  border: Border.all(color: Colors.white24),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(alpha: 0.6),
+                                      blurRadius: 20,
+                                      offset: const Offset(0, 8),
+                                    ),
+                                    BoxShadow(color: scheme.primary.withValues(alpha: 0.25), blurRadius: 24),
+                                  ],
+                                ),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(18),
+                                  child: SizedBox(
+                                    width: 108,
+                                    height: 162,
+                                    child: CachedNetworkImage(imageUrl: title.posterUrl!, fit: BoxFit.cover),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                            ],
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(title.title, style: Theme.of(context).textTheme.headlineSmall),
+                                  if (title.originalTitle != null && title.originalTitle != title.title)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 2),
+                                      child: Text(
+                                        title.originalTitle!,
+                                        style: TextStyle(color: scheme.onSurfaceVariant, fontStyle: FontStyle.italic),
+                                      ),
+                                    ),
+                                ],
+                              ),
                             ),
-                          ),
-                        const SizedBox(height: 12),
+                          ],
+                        ),
+                        const SizedBox(height: 14),
                         Wrap(
                           spacing: 8,
                           runSpacing: 8,
@@ -103,10 +147,32 @@ class TitleDetailScreen extends ConsumerWidget {
                             for (final g in title.genres.take(3)) _MetaPill(g),
                           ],
                         ),
+                        if (title.tmdbId != null) ...[
+                          const SizedBox(height: 12),
+                          Wrap(
+                            spacing: 10,
+                            runSpacing: 8,
+                            children: [
+                              _TrailerButton(tmdbId: title.tmdbId!, mediaType: title.mediaType),
+                              if (title.mediaType == 'movie') _CollectionButton(title: title, profile: profile),
+                            ],
+                          ),
+                          if (title.mediaType == 'tv') _AirInfoLine(tmdbId: title.tmdbId!),
+                        ],
                         const SizedBox(height: 22),
-                        _StatusSelector(title: title, profile: profile),
+                        SizedBox(
+                          width: double.infinity,
+                          child: GlassCard(
+                            padding: const EdgeInsets.all(14),
+                            child: _StatusSelector(title: title, profile: profile),
+                          ),
+                        ),
+                        if (title.status == WatchStatus.queroVer ||
+                            title.status == WatchStatus.assistindo ||
+                            title.status == WatchStatus.assistidoJuntos)
+                          _AudienceSelector(title: title, profile: profile),
                         if (title.status == WatchStatus.assistindo && title.mediaType == 'tv')
-                          _ProgressCard(key: ValueKey(title.id), title: title),
+                          ProgressCard(key: ValueKey(title.id), title: title, profile: profile),
                         if (title.status == WatchStatus.recomendo && title.recommendedBy != null)
                           Padding(
                             padding: const EdgeInsets.only(top: 14),
@@ -123,11 +189,32 @@ class TitleDetailScreen extends ConsumerWidget {
                           ),
                         if (title.overview != null && title.overview!.isNotEmpty) ...[
                           const SizedBox(height: 28),
-                          const SectionTitle('Sinopse'),
-                          const SizedBox(height: 10),
-                          Text(
-                            title.overview!,
-                            style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.85), height: 1.5, fontSize: 15),
+                          GlassCard(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const SectionTitle('Sinopse'),
+                                const SizedBox(height: 10),
+                                Text(
+                                  title.overview!,
+                                  style: TextStyle(
+                                    color: scheme.onSurface.withValues(alpha: 0.85),
+                                    height: 1.5,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                        if (title.tmdbId != null) ...[
+                          const SizedBox(height: 28),
+                          _WhereToWatch(tmdbId: title.tmdbId!, mediaType: title.mediaType),
+                        ],
+                        if (title.mediaType == 'tv' && title.status != WatchStatus.queroVer) ...[
+                          const SizedBox(height: 28),
+                          GlassCard(
+                            child: EpisodesSection(key: ValueKey('eps-${title.id}'), title: title, profile: profile),
                           ),
                         ],
                         const SizedBox(height: 28),
@@ -252,102 +339,62 @@ class _StatusSelector extends ConsumerWidget {
   }
 }
 
-class _ProgressCard extends ConsumerStatefulWidget {
-  final TitleModel title;
-  const _ProgressCard({super.key, required this.title});
+class _WhereToWatch extends ConsumerWidget {
+  final int tmdbId;
+  final String mediaType;
+  const _WhereToWatch({required this.tmdbId, required this.mediaType});
 
   @override
-  ConsumerState<_ProgressCard> createState() => _ProgressCardState();
-}
+  Widget build(BuildContext context, WidgetRef ref) {
+    final providers = ref.watch(watchProvidersProvider((tmdbId: tmdbId, mediaType: mediaType))).valueOrNull;
+    if (providers == null || providers.isEmpty) return const SizedBox.shrink();
+    final muted = Theme.of(context).colorScheme.onSurfaceVariant;
 
-class _ProgressCardState extends ConsumerState<_ProgressCard> {
-  late int _season;
-  late int _episode;
-
-  @override
-  void initState() {
-    super.initState();
-    _season = widget.title.currentSeason ?? 1;
-    _episode = widget.title.currentEpisode ?? 1;
-  }
-
-  void _change({int season = 0, int episode = 0}) {
-    setState(() {
-      _season = (_season + season).clamp(1, 999);
-      _episode = (_episode + episode).clamp(1, 9999);
-    });
-    ref.read(titlesProvider.notifier).updateProgress(
-          widget.title.id,
-          season: _season,
-          episode: _episode,
-        );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      margin: const EdgeInsets.only(top: 16),
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: scheme.primary.withValues(alpha: 0.4)),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [scheme.primary.withValues(alpha: 0.22), scheme.primary.withValues(alpha: 0.05)],
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.play_circle_fill_rounded, size: 18, color: scheme.secondary),
-              const SizedBox(width: 8),
-              Text('Onde paramos', style: TextStyle(fontWeight: FontWeight.w700, color: scheme.secondary)),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(child: _stepper('Temporada', _season, (d) => _change(season: d))),
-              Container(width: 1, height: 64, color: Colors.white12),
-              Expanded(child: _stepper('Episódio', _episode, (d) => _change(episode: d))),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _stepper(String label, int value, void Function(int delta) onChange) {
-    final scheme = Theme.of(context).colorScheme;
-    return Column(
-      children: [
-        Text(label, style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+    Widget group(String label, List<WatchProvider> list) {
+      if (list.isEmpty) return const SizedBox.shrink();
+      return Padding(
+        padding: const EdgeInsets.only(top: 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            IconButton(
-              icon: const Icon(Icons.remove_circle_outline_rounded),
-              onPressed: value > 1 ? () => onChange(-1) : null,
-            ),
-            SizedBox(
-              width: 44,
-              child: Text(
-                '$value',
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800),
-              ),
-            ),
-            IconButton(
-              icon: Icon(Icons.add_circle_rounded, color: scheme.primary),
-              onPressed: () => onChange(1),
+            Text(label, style: TextStyle(color: muted, fontSize: 12.5)),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final p in list.take(8))
+                  Tooltip(
+                    message: p.name,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: p.logoUrl == null
+                          ? _MetaPill(p.name)
+                          : CachedNetworkImage(imageUrl: p.logoUrl!, width: 44, height: 44),
+                    ),
+                  ),
+              ],
             ),
           ],
         ),
-      ],
+      );
+    }
+
+    return GlassCard(
+      child: SizedBox(
+        width: double.infinity,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SectionTitle('Onde assistir'),
+            group('Streaming', providers.stream),
+            group('Alugar', providers.rent),
+            group('Comprar', providers.buy),
+            const SizedBox(height: 8),
+            Text('Dados: JustWatch', style: TextStyle(color: muted, fontSize: 11)),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -370,10 +417,13 @@ class _RatingCard extends ConsumerStatefulWidget {
 }
 
 class _RatingCardState extends ConsumerState<_RatingCard> {
+  late final TitlesRepository _repo = ref.read(titlesRepositoryProvider);
   late double _rating;
   late TextEditingController _commentController;
   DateTime? _watchedAt;
   bool _saving = false;
+  bool _dirty = false;
+  Timer? _debounce;
 
   @override
   void initState() {
@@ -385,24 +435,38 @@ class _RatingCardState extends ConsumerState<_RatingCard> {
 
   @override
   void dispose() {
+    _debounce?.cancel();
+    // Não perde o que foi digitado se a pessoa sair da tela sem tocar fora.
+    if (_dirty) _persist();
     _commentController.dispose();
     super.dispose();
   }
 
-  Future<void> _save() async {
-    setState(() => _saving = true);
-    final repo = ref.read(titlesRepositoryProvider);
-    await repo.upsertRating(RatingModel(
+  void _scheduleSave() {
+    _dirty = true;
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 700), _save);
+  }
+
+  Future<void> _persist() {
+    _dirty = false;
+    final comment = _commentController.text.trim();
+    return _repo.upsertRating(RatingModel(
       id: widget.existing?.id ?? '',
       titleId: widget.titleId,
       owner: widget.owner.name,
       rating: _rating == 0 ? null : _rating,
-      comment: _commentController.text.trim().isEmpty ? null : _commentController.text.trim(),
+      comment: comment.isEmpty ? null : comment,
       watchedAt: _watchedAt,
       createdAt: widget.existing?.createdAt ?? DateTime.now(),
       updatedAt: DateTime.now(),
     ));
-    ref.invalidate(ratingsForTitleProvider(widget.titleId));
+  }
+
+  Future<void> _save() async {
+    if (!mounted) return;
+    setState(() => _saving = true);
+    await _persist();
     if (mounted) setState(() => _saving = false);
   }
 
@@ -413,22 +477,27 @@ class _RatingCardState extends ConsumerState<_RatingCard> {
       firstDate: DateTime(2000),
       lastDate: DateTime.now(),
     );
-    if (picked != null) setState(() => _watchedAt = picked);
+    if (picked != null) {
+      setState(() => _watchedAt = picked);
+      _scheduleSave();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final color = widget.owner.seedColor;
     final muted = Theme.of(context).colorScheme.onSurfaceVariant;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withValues(alpha: widget.editable ? 0.45 : 0.15)),
-      ),
-      child: Column(
+    // Card do parceiro sempre mostra o que veio do banco (ao vivo).
+    final shownRating = widget.editable ? _rating : (widget.existing?.rating ?? 0);
+    final otherComment = widget.existing?.comment ?? '';
+    final otherWatchedAt = widget.existing?.watchedAt;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: GlassCard(
+        radius: 22,
+        padding: const EdgeInsets.all(14),
+        borderColor: color.withValues(alpha: widget.editable ? 0.55 : 0.18),
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
@@ -450,8 +519,10 @@ class _RatingCardState extends ConsumerState<_RatingCard> {
             ignoring: !widget.editable,
             child: Opacity(
               opacity: widget.editable ? 1 : 0.7,
-              child: RatingBar.builder(
-                initialRating: _rating,
+              child: KeyedSubtree(
+                key: ValueKey(shownRating),
+                child: RatingBar.builder(
+                initialRating: shownRating,
                 minRating: 0,
                 allowHalfRating: true,
                 itemCount: 5,
@@ -460,8 +531,9 @@ class _RatingCardState extends ConsumerState<_RatingCard> {
                 itemBuilder: (context, _) => Icon(Icons.star_rounded, color: color),
                 onRatingUpdate: (value) {
                   setState(() => _rating = value);
-                  _save();
+                  _scheduleSave();
                 },
+                ),
               ),
             ),
           ),
@@ -472,16 +544,12 @@ class _RatingCardState extends ConsumerState<_RatingCard> {
               minLines: 1,
               maxLines: 3,
               decoration: const InputDecoration(hintText: 'Escreva um comentário...', isDense: true),
-              onSubmitted: (_) => _save(),
-              onTapOutside: (_) => _save(),
+              onChanged: (_) => _scheduleSave(),
             ),
             const SizedBox(height: 10),
             InkWell(
               borderRadius: BorderRadius.circular(8),
-              onTap: () async {
-                await _pickDate();
-                await _save();
-              },
+              onTap: _pickDate,
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 child: Row(
@@ -497,19 +565,229 @@ class _RatingCardState extends ConsumerState<_RatingCard> {
                 ),
               ),
             ),
-          ] else if (_commentController.text.isNotEmpty || _watchedAt != null) ...[
+          ] else if (otherComment.isNotEmpty || otherWatchedAt != null) ...[
             const SizedBox(height: 8),
-            if (_commentController.text.isNotEmpty) Text(_commentController.text),
-            if (_watchedAt != null)
+            if (otherComment.isNotEmpty) Text(otherComment),
+            if (otherWatchedAt != null)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
-                  DateFormat('dd/MM/yyyy').format(_watchedAt!),
+                  DateFormat('dd/MM/yyyy').format(otherWatchedAt),
                   style: TextStyle(fontSize: 12, color: muted),
                 ),
               ),
           ],
         ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AudienceSelector extends ConsumerWidget {
+  final TitleModel title;
+  final Profile? profile;
+  const _AudienceSelector({required this.title, required this.profile});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final me = profile ?? Profile.leticia;
+    final isWish = title.status == WatchStatus.queroVer;
+    final isDone = title.status == WatchStatus.assistidoJuntos;
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: SizedBox(
+        width: double.infinity,
+        child: GlassCard(
+        radius: 20,
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              isWish ? 'Quem quer ver?' : (isDone ? 'Quem viu?' : 'Quem está assistindo?'),
+              style: TextStyle(fontSize: 12.5, color: Theme.of(context).colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final a in Audience.values)
+                  ChoicePill(
+                    label: a.labelFor(me),
+                    icon: a == Audience.juntos ? Icons.favorite_rounded : Icons.person_rounded,
+                    selected: title.audience == a,
+                    onTap: () => ref.read(titlesProvider.notifier).updateAudience(title.id, a.value),
+                  ),
+              ],
+            ),
+          ],
+        ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AirInfoLine extends ConsumerWidget {
+  final int tmdbId;
+  const _AirInfoLine({required this.tmdbId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final info = ref.watch(tvAirInfoProvider(tmdbId)).valueOrNull;
+    if (info == null) return const SizedBox.shrink();
+    final scheme = Theme.of(context).colorScheme;
+    String? text;
+    if (info.nextAirDate != null) {
+      text = 'Próximo episódio: T${info.nextSeason ?? 1} · E${info.nextEpisode ?? 1} '
+          'em ${DateFormat('dd/MM/yyyy').format(info.nextAirDate!)}';
+    } else if (info.ended) {
+      text = 'Série finalizada';
+    }
+    if (text == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Row(
+        children: [
+          Icon(Icons.event_rounded, size: 16, color: scheme.secondary),
+          const SizedBox(width: 8),
+          Expanded(child: Text(text, style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13))),
+        ],
+      ),
+    );
+  }
+}
+
+class _TrailerButton extends ConsumerWidget {
+  final int tmdbId;
+  final String mediaType;
+  const _TrailerButton({required this.tmdbId, required this.mediaType});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final key = ref.watch(trailerKeyProvider((tmdbId: tmdbId, mediaType: mediaType))).valueOrNull;
+    if (key == null) return const SizedBox.shrink();
+    return OutlinedButton.icon(
+      onPressed: () => launchUrl(
+        Uri.https('www.youtube.com', '/watch', {'v': key}),
+        mode: LaunchMode.externalApplication,
+      ),
+      icon: const Icon(Icons.play_circle_outline_rounded, size: 20),
+      label: const Text('Trailer'),
+    );
+  }
+}
+
+class _CollectionButton extends ConsumerWidget {
+  final TitleModel title;
+  final Profile? profile;
+  const _CollectionButton({required this.title, required this.profile});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return OutlinedButton.icon(
+      onPressed: () => showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        builder: (_) => _CollectionSheet(title: title, profile: profile),
+      ),
+      icon: const Icon(Icons.collections_bookmark_outlined, size: 20),
+      label: const Text('Ver saga'),
+    );
+  }
+}
+
+class _CollectionSheet extends ConsumerStatefulWidget {
+  final TitleModel title;
+  final Profile? profile;
+  const _CollectionSheet({required this.title, required this.profile});
+
+  @override
+  ConsumerState<_CollectionSheet> createState() => _CollectionSheetState();
+}
+
+class _CollectionSheetState extends ConsumerState<_CollectionSheet> {
+  late final Future<TmdbCollection?> _future = ref.read(tmdbServiceProvider).fetchCollection(widget.title.tmdbId!);
+
+  Future<void> _add(TmdbSearchResult r) async {
+    final profile = widget.profile;
+    if (profile == null) return;
+    await ref.read(titlesProvider.notifier).addTitle({
+      'tmdb_id': r.id,
+      'media_type': 'movie',
+      'category': widget.title.category.value,
+      'title': r.title,
+      'original_title': r.originalTitle,
+      'poster_path': r.posterPath,
+      'backdrop_path': r.backdropPath,
+      'overview': r.overview,
+      'release_year': r.releaseYear,
+      'genres': r.genres,
+      'status': WatchStatus.queroVer.value,
+      'audience': Audience.juntos.value,
+      'added_by': profile.name,
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final inCatalog = {
+      for (final t in ref.watch(titlesProvider).valueOrNull ?? const <TitleModel>[])
+        if (t.tmdbId != null && t.mediaType == 'movie') t.tmdbId!,
+    };
+    return SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.8),
+        child: FutureBuilder<TmdbCollection?>(
+          future: _future,
+          builder: (context, snap) {
+            if (snap.connectionState != ConnectionState.done) {
+              return const SizedBox(height: 160, child: Center(child: CircularProgressIndicator()));
+            }
+            final collection = snap.data;
+            if (collection == null) {
+              return const Padding(
+                padding: EdgeInsets.all(32),
+                child: Text('Este filme não faz parte de uma saga.', textAlign: TextAlign.center),
+              );
+            }
+            return ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+              children: [
+                SectionTitle(collection.name),
+                const SizedBox(height: 12),
+                for (final part in collection.parts)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: part.posterPath == null
+                          ? const SizedBox(width: 40, height: 60)
+                          : CachedNetworkImage(
+                              imageUrl: 'https://image.tmdb.org/t/p/w154${part.posterPath}',
+                              width: 40,
+                              height: 60,
+                              fit: BoxFit.cover,
+                            ),
+                    ),
+                    title: Text(part.title, maxLines: 2, overflow: TextOverflow.ellipsis),
+                    subtitle: part.releaseYear == null ? null : Text('${part.releaseYear}'),
+                    trailing: inCatalog.contains(part.id)
+                        ? Icon(Icons.check_circle_rounded, color: scheme.primary)
+                        : IconButton(
+                            tooltip: 'Adicionar ao catálogo',
+                            icon: Icon(Icons.add_circle_rounded, color: scheme.primary),
+                            onPressed: () => _add(part),
+                          ),
+                  ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }

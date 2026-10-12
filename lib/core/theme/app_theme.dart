@@ -10,6 +10,8 @@ extension ProfileX on Profile {
         Profile.leticia => 'Leticia',
       };
 
+  String get photoAsset => 'images/$name.png';
+
   /// Cor principal: vermelho intenso (Heitor) / rosa vibrante (Leticia).
   Color get seedColor => switch (this) {
         Profile.heitor => const Color(0xFFFF2E3D),

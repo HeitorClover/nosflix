@@ -29,6 +29,9 @@ create table if not exists public.titles (
   current_season integer,
   current_episode integer,
 
+  -- para quem é: 'juntos' ou só um dos dois (lista de desejos / quem está assistindo)
+  audience text not null default 'juntos' check (audience in ('juntos', 'heitor', 'leticia')),
+
   -- só usado quando status = 'recomendo' (quem assistiu sozinho e tá indicando)
   recommended_by text check (recommended_by in ('heitor', 'leticia')),
 
@@ -97,6 +100,90 @@ drop trigger if exists ratings_set_updated_at on public.ratings;
 create trigger ratings_set_updated_at
   before update on public.ratings
   for each row execute function public.set_updated_at();
+
+-- ============================================================
+-- episode_comments: comentário por episódio (séries, desenhos, animes)
+-- um registro por pessoa por episódio
+-- ============================================================
+create table if not exists public.episode_comments (
+  id uuid primary key default gen_random_uuid(),
+  title_id uuid not null references public.titles (id) on delete cascade,
+  owner text not null check (owner in ('heitor', 'leticia')),
+  season integer not null check (season >= 0),
+  episode integer not null check (episode >= 1),
+  comment text not null,
+
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+
+  unique (title_id, owner, season, episode)
+);
+
+create index if not exists episode_comments_title_idx on public.episode_comments (title_id);
+
+drop trigger if exists episode_comments_set_updated_at on public.episode_comments;
+create trigger episode_comments_set_updated_at
+  before update on public.episode_comments
+  for each row execute function public.set_updated_at();
+
+alter table public.episode_comments enable row level security;
+
+drop policy if exists "episode_comments_all_access" on public.episode_comments;
+create policy "episode_comments_all_access" on public.episode_comments
+  for all using (true) with check (true);
+
+do $$
+begin
+  alter publication supabase_realtime add table public.episode_comments;
+exception when duplicate_object then null;
+end $$;
+
+-- ============================================================
+-- picks: votação da noite de cinema (cada pessoa escolhe até 3 títulos)
+-- ============================================================
+create table if not exists public.picks (
+  id uuid primary key default gen_random_uuid(),
+  owner text not null check (owner in ('heitor', 'leticia')),
+  title_id uuid not null references public.titles (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  unique (owner, title_id)
+);
+
+create index if not exists picks_title_idx on public.picks (title_id);
+
+alter table public.picks enable row level security;
+
+drop policy if exists "picks_all_access" on public.picks;
+create policy "picks_all_access" on public.picks
+  for all using (true) with check (true);
+
+do $$
+begin
+  alter publication supabase_realtime add table public.picks;
+exception when duplicate_object then null;
+end $$;
+
+-- ============================================================
+-- main_titles: série principal de cada pessoa (entre as que está assistindo)
+-- ============================================================
+create table if not exists public.main_titles (
+  id uuid primary key default gen_random_uuid(),
+  owner text not null unique check (owner in ('heitor', 'leticia')),
+  title_id uuid not null references public.titles (id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+
+alter table public.main_titles enable row level security;
+
+drop policy if exists "main_titles_all_access" on public.main_titles;
+create policy "main_titles_all_access" on public.main_titles
+  for all using (true) with check (true);
+
+do $$
+begin
+  alter publication supabase_realtime add table public.main_titles;
+exception when duplicate_object then null;
+end $$;
 
 -- ============================================================
 -- Row Level Security

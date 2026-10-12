@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/theme/app_theme.dart';
 import '../data/tmdb_service.dart';
+import '../models/audience.dart';
 import '../models/watch_status.dart';
 import '../providers/profile_provider.dart';
 import '../providers/titles_provider.dart';
@@ -21,6 +22,7 @@ class _AddTitleScreenState extends ConsumerState<AddTitleScreen> {
   final _searchController = TextEditingController();
   Timer? _debounce;
 
+  Audience _audience = Audience.juntos;
   List<TmdbSearchResult> _results = [];
   bool _loading = false;
   String? _error;
@@ -62,6 +64,7 @@ class _AddTitleScreenState extends ConsumerState<AddTitleScreen> {
   }
 
   Future<void> _addFromTmdb(TmdbSearchResult r) async {
+    _audience = Audience.juntos;
     final category = await _pickCategory(r.mediaType);
     if (category == null) return;
 
@@ -80,6 +83,7 @@ class _AddTitleScreenState extends ConsumerState<AddTitleScreen> {
       'release_year': r.releaseYear,
       'genres': r.genres,
       'status': WatchStatus.queroVer.value,
+      'audience': _audience.value,
       'recommended_by': null,
       'added_by': profile.name,
     });
@@ -91,30 +95,54 @@ class _AddTitleScreenState extends ConsumerState<AddTitleScreen> {
     final suggestion = mediaType == 'movie' ? TitleCategory.filme : TitleCategory.serie;
     return showModalBottomSheet<TitleCategory>(
       context: context,
-      builder: (context) => SafeArea(
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheet) => SafeArea(
         child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
           child: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Padding(
-                padding: EdgeInsets.fromLTRB(20, 0, 20, 8),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: SectionTitle('Isso é...'),
-                ),
+              const SectionTitle('Quem quer ver?'),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final a in Audience.values)
+                    ChoicePill(
+                      label: a.labelFor(ref.read(profileProvider).profile ?? Profile.leticia),
+                      icon: a == Audience.juntos ? Icons.favorite_rounded : Icons.person_rounded,
+                      selected: _audience == a,
+                      onTap: () {
+                        _audience = a;
+                        setSheet(() {});
+                      },
+                    ),
+                ],
               ),
-              for (final c in TitleCategory.values)
-                ListTile(
-                  leading: Icon(c.icon),
-                  title: Text(c.label),
-                  trailing: c == suggestion
-                      ? Icon(Icons.star_rounded, size: 20, color: Theme.of(context).colorScheme.primary)
-                      : null,
-                  onTap: () => Navigator.of(context).pop(c),
-                ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 22),
+              const SectionTitle('Isso é...'),
+              const SizedBox(height: 14),
+              GridView.count(
+                crossAxisCount: 3,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                mainAxisSpacing: 10,
+                crossAxisSpacing: 10,
+                childAspectRatio: 1.05,
+                children: [
+                  for (final c in TitleCategory.values)
+                    _CategoryTile(
+                      category: c,
+                      suggested: c == suggestion,
+                      onTap: () => Navigator.of(context).pop(c),
+                    ),
+                ],
+              ),
             ],
           ),
+        ),
         ),
       ),
     );
@@ -127,21 +155,33 @@ class _AddTitleScreenState extends ConsumerState<AddTitleScreen> {
     final hasQuery = _searchController.text.trim().isNotEmpty;
 
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(title: const Text('Adicionar título')),
       body: AppBackground(
+        photo: BackdropPhoto.search,
         child: SafeArea(
           child: Column(
             children: [
+              const SizedBox(height: kToolbarHeight),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-                child: TextField(
-                  controller: _searchController,
-                  autofocus: true,
-                  decoration: const InputDecoration(
-                    hintText: 'Nome do filme, série ou desenho...',
-                    prefixIcon: Icon(Icons.search_rounded),
+                child: GlassCard(
+                  radius: 22,
+                  padding: EdgeInsets.zero,
+                  child: TextField(
+                    controller: _searchController,
+                    autofocus: true,
+                    style: const TextStyle(fontSize: 16),
+                    decoration: const InputDecoration(
+                      hintText: 'Nome do filme, série ou desenho...',
+                      filled: false,
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      prefixIcon: Icon(Icons.search_rounded),
+                    ),
+                    onChanged: _onChanged,
                   ),
-                  onChanged: _onChanged,
                 ),
               ),
               if (!configured)
@@ -172,16 +212,25 @@ class _AddTitleScreenState extends ConsumerState<AddTitleScreen> {
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(
-                                hasQuery ? Icons.search_off_rounded : Icons.movie_filter_rounded,
-                                size: 52,
-                                color: scheme.onSurfaceVariant,
+                              Container(
+                                width: 88,
+                                height: 88,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Colors.white.withValues(alpha: 0.1),
+                                  border: Border.all(color: Colors.white24),
+                                ),
+                                child: Icon(
+                                  hasQuery ? Icons.search_off_rounded : Icons.movie_filter_rounded,
+                                  size: 40,
+                                  color: Colors.white,
+                                ),
                               ),
                               const SizedBox(height: 12),
                               Text(
                                 hasQuery ? 'Nenhum resultado' : 'Busque pelo nome em português ou inglês',
                                 textAlign: TextAlign.center,
-                                style: TextStyle(color: scheme.onSurfaceVariant),
+                                style: const TextStyle(color: Colors.white70),
                               ),
                             ],
                           ),
@@ -215,13 +264,11 @@ class _ResultTile extends StatelessWidget {
     final r = result;
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
-      child: Card(
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(10),
-            child: Row(
+      child: GlassCard(
+        radius: 22,
+        padding: const EdgeInsets.all(10),
+        onTap: onTap,
+        child: Row(
               children: [
                 ClipRRect(
                   borderRadius: BorderRadius.circular(12),
@@ -276,9 +323,37 @@ class _ResultTile extends StatelessWidget {
                   child: const Icon(Icons.add_rounded, color: Colors.white),
                 ),
               ],
-            ),
-          ),
         ),
+      ),
+    );
+  }
+}
+
+class _CategoryTile extends StatelessWidget {
+  final TitleCategory category;
+  final bool suggested;
+  final VoidCallback onTap;
+  const _CategoryTile({required this.category, required this.suggested, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return GlassCard(
+      radius: 20,
+      padding: const EdgeInsets.all(8),
+      borderColor: suggested ? scheme.primary : null,
+      onTap: onTap,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(category.icon, size: 28, color: suggested ? scheme.primary : scheme.onSurface),
+          const SizedBox(height: 8),
+          Text(
+            category.label,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+          ),
+        ],
       ),
     );
   }

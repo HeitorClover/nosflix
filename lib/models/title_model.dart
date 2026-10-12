@@ -1,3 +1,4 @@
+import 'audience.dart';
 import 'watch_status.dart';
 
 class TitleModel {
@@ -13,6 +14,7 @@ class TitleModel {
   final int? releaseYear;
   final List<String> genres;
   final WatchStatus status;
+  final Audience audience;
   final int? currentSeason;
   final int? currentEpisode;
   final String? recommendedBy;
@@ -33,6 +35,7 @@ class TitleModel {
     this.releaseYear,
     this.genres = const [],
     required this.status,
+    this.audience = Audience.juntos,
     this.currentSeason,
     this.currentEpisode,
     this.recommendedBy,
@@ -55,6 +58,7 @@ class TitleModel {
       releaseYear: json['release_year'] as int?,
       genres: (json['genres'] as List?)?.map((e) => e.toString()).toList() ?? const [],
       status: WatchStatusX.fromValue(json['status'] as String? ?? 'quero_ver'),
+      audience: AudienceX.fromValue(json['audience'] as String?),
       currentSeason: json['current_season'] as int?,
       currentEpisode: json['current_episode'] as int?,
       recommendedBy: json['recommended_by'] as String?,
@@ -76,6 +80,7 @@ class TitleModel {
         'release_year': releaseYear,
         'genres': genres,
         'status': status.value,
+        'audience': audience.value,
         'current_season': currentSeason,
         'current_episode': currentEpisode,
         'recommended_by': recommendedBy,

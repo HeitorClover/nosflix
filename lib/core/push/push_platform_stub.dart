@@ -1,4 +1,4 @@
-// Plataformas sem Web Push (Android/Windows nativos): nada a fazer.
+// Plataformas sem Web Push (builds nativos, ex.: Windows): nada a fazer.
 bool pushSupported() => false;
 
 bool pushNeedsInstall() => false;

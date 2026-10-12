@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import '../models/tv_models.dart';
 
 class TmdbSearchResult {
   final int id;
@@ -24,6 +25,12 @@ class TmdbSearchResult {
     this.releaseYear,
     this.genres = const [],
   });
+}
+
+class TmdbCollection {
+  final String name;
+  final List<TmdbSearchResult> parts;
+  const TmdbCollection({required this.name, required this.parts});
 }
 
 class TmdbService {
@@ -64,6 +71,103 @@ class TmdbService {
       merged.putIfAbsent('${r.mediaType}:${r.id}', () => r);
     }
     return merged.values.toList();
+  }
+
+  Future<Map<String, dynamic>?> _getJson(String path, [Map<String, String> params = const {}]) async {
+    if (!isConfigured) return null;
+    final uri = Uri.parse('$_baseUrl$path').replace(queryParameters: {'api_key': _apiKey, ...params});
+    final response = await http.get(uri);
+    if (response.statusCode != 200) return null;
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  DateTime? _date(dynamic v) => v is String && v.isNotEmpty ? DateTime.tryParse(v) : null;
+
+  /// Temporadas (sem a "temporada 0" de extras) e situação de exibição da série.
+  Future<TvDetails> fetchTvDetails(int tmdbId) async {
+    final data = await _getJson('/tv/$tmdbId', {'language': 'pt-BR'});
+    if (data == null) return const TvDetails();
+    final seasons = (data['seasons'] as List? ?? [])
+        .cast<Map<String, dynamic>>()
+        .where((s) => (s['season_number'] as int? ?? 0) > 0)
+        .map((s) => TvSeason(
+              number: s['season_number'] as int,
+              episodeCount: s['episode_count'] as int? ?? 0,
+              name: s['name'] as String? ?? 'Temporada ${s['season_number']}',
+            ))
+        .toList();
+    final next = data['next_episode_to_air'] as Map<String, dynamic>?;
+    final last = data['last_episode_to_air'] as Map<String, dynamic>?;
+    final status = data['status'] as String? ?? '';
+    return TvDetails(
+      seasons: seasons,
+      airInfo: TvAirInfo(
+        ended: status == 'Ended' || status == 'Canceled',
+        nextAirDate: _date(next?['air_date']),
+        nextSeason: next?['season_number'] as int?,
+        nextEpisode: next?['episode_number'] as int?,
+        lastAirDate: _date(last?['air_date']),
+        lastSeason: seasons.isEmpty ? 0 : seasons.map((s) => s.number).reduce((a, b) => a > b ? a : b),
+      ),
+    );
+  }
+
+  Future<List<TvEpisode>> fetchEpisodes(int tmdbId, int season) async {
+    final data = await _getJson('/tv/$tmdbId/season/$season', {'language': 'pt-BR'});
+    if (data == null) return [];
+    return (data['episodes'] as List? ?? [])
+        .cast<Map<String, dynamic>>()
+        .map((e) => TvEpisode(
+              number: e['episode_number'] as int,
+              name: (e['name'] as String?)?.trim().isNotEmpty == true
+                  ? e['name'] as String
+                  : 'Episódio ${e['episode_number']}',
+            ))
+        .toList();
+  }
+
+  Future<WatchProviders> fetchWatchProviders(int tmdbId, String mediaType) async {
+    final data = await _getJson('/$mediaType/$tmdbId/watch/providers');
+    final br = (data?['results'] as Map<String, dynamic>?)?['BR'] as Map<String, dynamic>?;
+    if (br == null) return const WatchProviders();
+    List<WatchProvider> parse(String key) => (br[key] as List? ?? [])
+        .cast<Map<String, dynamic>>()
+        .map((p) => WatchProvider(name: p['provider_name'] as String, logoPath: p['logo_path'] as String?))
+        .toList();
+    return WatchProviders(stream: parse('flatrate'), rent: parse('rent'), buy: parse('buy'));
+  }
+
+  /// Chave do vídeo do YouTube com o trailer (pt-BR, depois en-US), se houver.
+  Future<String?> fetchTrailerKey(int tmdbId, String mediaType) async {
+    for (final language in ['pt-BR', 'en-US']) {
+      final data = await _getJson('/$mediaType/$tmdbId/videos', {'language': language});
+      final videos = (data?['results'] as List? ?? []).cast<Map<String, dynamic>>().where(
+            (v) => v['site'] == 'YouTube' && (v['type'] == 'Trailer' || v['type'] == 'Teaser'),
+          );
+      if (videos.isEmpty) continue;
+      final sorted = videos.toList()
+        ..sort((a, b) {
+          int score(Map<String, dynamic> v) => (v['type'] == 'Trailer' ? 2 : 0) + (v['official'] == true ? 1 : 0);
+          return score(b).compareTo(score(a));
+        });
+      return sorted.first['key'] as String?;
+    }
+    return null;
+  }
+
+  /// Coleção/saga a que o filme pertence, com todos os filmes dela. `null` se não houver.
+  Future<TmdbCollection?> fetchCollection(int movieId) async {
+    final movie = await _getJson('/movie/$movieId', {'language': 'pt-BR'});
+    final belongs = movie?['belongs_to_collection'] as Map<String, dynamic>?;
+    if (belongs == null) return null;
+    final data = await _getJson('/collection/${belongs['id']}', {'language': 'pt-BR'});
+    if (data == null) return null;
+    final parts = (data['parts'] as List? ?? [])
+        .cast<Map<String, dynamic>>()
+        .map((p) => _fromJson({...p, 'media_type': 'movie'}))
+        .toList()
+      ..sort((a, b) => (a.releaseYear ?? 9999).compareTo(b.releaseYear ?? 9999));
+    return TmdbCollection(name: data['name'] as String? ?? belongs['name'] as String, parts: parts);
   }
 
   Future<List<TmdbSearchResult>> _searchIn(String query, String language) async {

@@ -45,6 +45,7 @@ dependencies:
   shared_preferences: ^2.3.4
   flutter_rating_bar: ^4.0.1
   google_fonts: ^8.2.1
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:
@@ -71,6 +72,10 @@ flutter:
   # To add assets to your application, add an assets section, like this:
   assets:
     - .env
+    - images/home.jpeg
+    - images/search.png
+    - images/heitor.png
+    - images/leticia.png
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

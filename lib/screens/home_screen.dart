@@ -3,6 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/push/push_service.dart';
 import '../core/theme/app_theme.dart';
+import '../core/news.dart';
+import '../data/titles_repository.dart';
+import '../models/audience.dart';
+import '../models/rating_model.dart';
 import '../models/title_model.dart';
 import '../models/watch_status.dart';
 import '../providers/profile_provider.dart';
@@ -10,28 +14,84 @@ import '../providers/titles_provider.dart';
 import '../widgets/nosflix_widgets.dart';
 import '../widgets/title_card.dart';
 import 'add_title_screen.dart';
+import 'movie_night_screen.dart';
+import 'stats_screen.dart';
 import 'title_detail_screen.dart';
 
 enum _HomeFilter {
-  all('Tudo', Icons.apps_rounded),
-  queroVer('Temos que ver juntos', Icons.bookmark_add_outlined),
-  assistindo('Assistindo', Icons.play_circle_outline),
-  assistidoJuntos('Já vimos juntos', Icons.favorite),
-  recommendedByMe('Recomendei', Icons.campaign_outlined),
-  recommendedToMe('Pra mim', Icons.card_giftcard_rounded);
+  all(Icons.apps_rounded),
+  wishTogether(Icons.bookmark_add_outlined),
+  myWishes(Icons.bookmark_outline_rounded),
+  otherWishes(Icons.bookmark_outline_rounded),
+  watchingTogether(Icons.play_circle_outline),
+  watchingMe(Icons.person_rounded),
+  watchingOther(Icons.person_outline_rounded),
+  watchedTogether(Icons.favorite),
+  watchedMe(Icons.person_rounded),
+  watchedOther(Icons.person_outline_rounded),
+  recommendedByMe(Icons.campaign_outlined),
+  recommendedToMe(Icons.card_giftcard_rounded);
+
+  final IconData icon;
+  const _HomeFilter(this.icon);
+
+  String labelFor(Profile me) {
+    final other = me == Profile.heitor ? Profile.leticia : Profile.heitor;
+    return switch (this) {
+      _HomeFilter.all => 'Tudo',
+      _HomeFilter.wishTogether => 'Ver juntos',
+      _HomeFilter.myWishes => 'Meus desejos',
+      _HomeFilter.otherWishes => 'Desejos de ${other.displayName}',
+      _HomeFilter.watchingTogether => 'Assistindo juntos',
+      _HomeFilter.watchingMe => 'Só eu assisto',
+      _HomeFilter.watchingOther => '${other.displayName} assiste',
+      _HomeFilter.watchedTogether => 'Já vimos juntos',
+      _HomeFilter.watchedMe => 'Só eu vi',
+      _HomeFilter.watchedOther => '${other.displayName} viu',
+      _HomeFilter.recommendedByMe => 'Recomendei',
+      _HomeFilter.recommendedToMe => 'Pra mim',
+    };
+  }
+
+  bool matches(TitleModel t, Profile me) {
+    final other = me == Profile.heitor ? Profile.leticia : Profile.heitor;
+    final wish = t.status == WatchStatus.queroVer;
+    final watching = t.status == WatchStatus.assistindo;
+    final done = t.status == WatchStatus.assistidoJuntos;
+    return switch (this) {
+      _HomeFilter.all => true,
+      _HomeFilter.wishTogether => wish && t.audience == Audience.juntos,
+      _HomeFilter.myWishes => wish && t.audience == AudienceX.solo(me),
+      _HomeFilter.otherWishes => wish && t.audience == AudienceX.solo(other),
+      _HomeFilter.watchingTogether => watching && t.audience == Audience.juntos,
+      _HomeFilter.watchingMe => watching && t.audience == AudienceX.solo(me),
+      _HomeFilter.watchingOther => watching && t.audience == AudienceX.solo(other),
+      _HomeFilter.watchedTogether => done && t.audience == Audience.juntos,
+      _HomeFilter.watchedMe => done && t.audience == AudienceX.solo(me),
+      _HomeFilter.watchedOther => done && t.audience == AudienceX.solo(other),
+      _HomeFilter.recommendedByMe => t.status == WatchStatus.recomendo && t.recommendedBy == me.name,
+      _HomeFilter.recommendedToMe => t.status == WatchStatus.recomendo && t.recommendedBy != me.name,
+    };
+  }
+}
+
+enum _Sort {
+  recent('Mais recentes', Icons.schedule_rounded),
+  rating('Melhor nota', Icons.star_rounded),
+  alphabetical('A–Z', Icons.sort_by_alpha_rounded),
+  year('Ano', Icons.calendar_month_rounded);
 
   final String label;
   final IconData icon;
-  const _HomeFilter(this.label, this.icon);
+  const _Sort(this.label, this.icon);
+}
 
-  bool matches(TitleModel t, Profile me) => switch (this) {
-        _HomeFilter.all => true,
-        _HomeFilter.queroVer => t.status == WatchStatus.queroVer,
-        _HomeFilter.assistindo => t.status == WatchStatus.assistindo,
-        _HomeFilter.assistidoJuntos => t.status == WatchStatus.assistidoJuntos,
-        _HomeFilter.recommendedByMe => t.status == WatchStatus.recomendo && t.recommendedBy == me.name,
-        _HomeFilter.recommendedToMe => t.status == WatchStatus.recomendo && t.recommendedBy != me.name,
-      };
+double _averageRating(String titleId, List<RatingModel> ratings) {
+  final values = [
+    for (final r in ratings)
+      if (r.titleId == titleId && r.rating != null) r.rating!,
+  ];
+  return values.isEmpty ? -1 : values.reduce((a, b) => a + b) / values.length;
 }
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -43,6 +103,8 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   _HomeFilter _filter = _HomeFilter.all;
+  TitleCategory? _category;
+  _Sort _sort = _Sort.recent;
   PushStatus _pushStatus = PushStatus.unsupported;
   final _searchController = TextEditingController();
   String _query = '';
@@ -114,16 +176,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final profile = ref.watch(profileProvider).profile ?? Profile.leticia;
     final titlesAsync = ref.watch(titlesProvider);
 
+    final all = titlesAsync.valueOrNull ?? const <TitleModel>[];
+
     return Scaffold(
-      floatingActionButton: GradientFab(
-        icon: Icons.add_rounded,
-        label: 'Adicionar',
-        onPressed: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const AddTitleScreen()),
-        ),
+      extendBody: true,
+      bottomNavigationBar: _NavBar(
+        onAdd: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AddTitleScreen())),
+        onNight: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const MovieNightScreen())),
+        onStats: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const StatsScreen())),
       ),
       body: AppBackground(
+        photo: BackdropPhoto.home,
         child: SafeArea(
+          bottom: false,
           child: Column(
             children: [
               _Header(
@@ -133,35 +198,56 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 onSwitch: () => ref.read(profileProvider.notifier).signOut(),
               ),
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                child: TextField(
-                  controller: _searchController,
-                  decoration: InputDecoration(
-                    hintText: 'Buscar no catálogo...',
-                    prefixIcon: const Icon(Icons.search_rounded),
-                    suffixIcon: _query.isEmpty
-                        ? null
-                        : IconButton(
-                            icon: const Icon(Icons.close_rounded),
-                            onPressed: () {
-                              _searchController.clear();
-                              setState(() => _query = '');
-                            },
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: GlassCard(
+                        radius: 20,
+                        padding: EdgeInsets.zero,
+                        child: TextField(
+                          controller: _searchController,
+                          decoration: InputDecoration(
+                            hintText: 'Buscar no catálogo...',
+                            filled: false,
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            prefixIcon: const Icon(Icons.search_rounded),
+                            suffixIcon: _query.isEmpty
+                                ? null
+                                : IconButton(
+                                    icon: const Icon(Icons.close_rounded),
+                                    onPressed: () {
+                                      _searchController.clear();
+                                      setState(() => _query = '');
+                                    },
+                                  ),
                           ),
-                  ),
-                  onChanged: (v) => setState(() => _query = v),
+                          onChanged: (v) => setState(() => _query = v),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    _FilterButton(
+                      active: _category != null || _sort != _Sort.recent,
+                      onTap: _openFilters,
+                    ),
+                  ],
                 ),
               ),
               SizedBox(
-                height: 58,
+                height: 62,
                 child: ListView(
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   children: [
-                    for (final f in _HomeFilter.values) _pill(f),
+                    for (final f in _HomeFilter.values) _pill(f, all),
                   ],
                 ),
               ),
+              if (TitlesRepository.lastFetchWasOffline)
+                const _OfflineBanner(),
               Expanded(
                 child: titlesAsync.when(
                   loading: () => const Center(child: CircularProgressIndicator()),
@@ -179,11 +265,80 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Widget _pill(_HomeFilter filter) {
+  Future<void> _openFilters() {
+    return showModalBottomSheet<void>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheet) => SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SectionTitle('Ordenar por'),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final o in _Sort.values)
+                      ChoicePill(
+                        label: o.label,
+                        icon: o.icon,
+                        selected: _sort == o,
+                        onTap: () {
+                          setState(() => _sort = o);
+                          setSheet(() {});
+                        },
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                const SectionTitle('Categoria'),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    ChoicePill(
+                      label: 'Todas',
+                      selected: _category == null,
+                      onTap: () {
+                        setState(() => _category = null);
+                        setSheet(() {});
+                      },
+                    ),
+                    for (final c in TitleCategory.values)
+                      ChoicePill(
+                        label: c.label,
+                        icon: c.icon,
+                        selected: _category == c,
+                        onTap: () {
+                          setState(() => _category = c);
+                          setSheet(() {});
+                        },
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _pill(_HomeFilter filter, List<TitleModel> all) {
+    final me = ref.read(profileProvider).profile ?? Profile.leticia;
+    final count = filter == _HomeFilter.all ? null : all.where((t) => filter.matches(t, me)).length;
+    if (count == 0 && _filter != filter && filter != _HomeFilter.wishTogether && filter != _HomeFilter.watchingTogether && filter != _HomeFilter.watchedTogether) {
+      return const SizedBox.shrink();
+    }
     return Padding(
       padding: const EdgeInsets.only(right: 8),
       child: ChoicePill(
-        label: filter.label,
+        label: count == null || count == 0 ? filter.labelFor(me) : '${filter.labelFor(me)} · $count',
         icon: filter.icon,
         selected: _filter == filter,
         onTap: () => setState(() => _filter = filter),
@@ -193,7 +348,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   Widget _buildContent(List<TitleModel> titles) {
     final me = ref.read(profileProvider).profile ?? Profile.leticia;
-    var filtered = titles.where((t) => _filter.matches(t, me)).toList();
+    var filtered = titles
+        .where((t) => _filter.matches(t, me) && (_category == null || t.category == _category))
+        .toList();
     final hasQuery = _query.trim().isNotEmpty;
     if (hasQuery) {
       final q = _query.trim().toLowerCase();
@@ -205,7 +362,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
     if (filtered.isEmpty) return const _EmptyState();
 
-    final watching = titles.where((t) => t.status == WatchStatus.assistindo).toList();
+    final ratings = ref.watch(allRatingsProvider).valueOrNull ?? const <RatingModel>[];
+    switch (_sort) {
+      case _Sort.recent:
+        break; // já vem por updated_at desc
+      case _Sort.rating:
+        final scores = {for (final t in filtered) t.id: _averageRating(t.id, ratings)};
+        filtered.sort((a, b) => scores[b.id]!.compareTo(scores[a.id]!));
+      case _Sort.alphabetical:
+        filtered.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+      case _Sort.year:
+        filtered.sort((a, b) => (b.releaseYear ?? 0).compareTo(a.releaseYear ?? 0));
+    }
+
+    int audienceOrder(TitleModel t) => t.audience == Audience.juntos ? 0 : (t.audience == AudienceX.solo(me) ? 1 : 2);
+    final watching = titles.where((t) => t.status == WatchStatus.assistindo).toList()
+      ..sort((a, b) => audienceOrder(a).compareTo(audienceOrder(b)));
+    final mainPicks = ref.watch(mainTitlesProvider).valueOrNull ?? const [];
+    final mainId = mainPicks.where((m) => m.owner == me.name).firstOrNull?.titleId;
+    final mainTitle = titles
+        .where((t) => t.id == mainId && t.status == WatchStatus.assistindo && (t.audience.profile ?? me) == me)
+        .firstOrNull;
+    final news = ref.watch(newsProvider).valueOrNull ?? const <NewsItem>[];
+    final showNews = _filter == _HomeFilter.all && !hasQuery && news.isNotEmpty;
     final showContinue = _filter == _HomeFilter.all && !hasQuery && watching.isNotEmpty;
 
     return RefreshIndicator(
@@ -213,6 +392,36 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       child: CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
+          if (mainTitle != null && _filter == _HomeFilter.all && !hasQuery)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 18),
+                child: _MainCard(title: mainTitle, onTap: () => _open(mainTitle)),
+              ),
+            ),
+          if (showNews)
+            SliverToBoxAdapter(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(20, 4, 20, 12),
+                    child: SectionTitle('Novidades'),
+                  ),
+                  SizedBox(
+                    height: 84,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: news.length,
+                      separatorBuilder: (_, _) => const SizedBox(width: 12),
+                      itemBuilder: (context, i) => _NewsCard(item: news[i], onTap: () => _open(news[i].title)),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                ],
+              ),
+            ),
           if (showContinue)
             SliverToBoxAdapter(
               child: Column(
@@ -249,7 +458,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 mainAxisSpacing: 14,
               ),
               delegate: SliverChildBuilderDelegate(
-                (context, index) => TitleCard(title: filtered[index], onTap: () => _open(filtered[index])),
+                (context, index) {
+                  final avg = _averageRating(filtered[index].id, ratings);
+                  return TitleCard(
+                    title: filtered[index],
+                    rating: avg < 0 ? null : avg,
+                    onTap: () => _open(filtered[index]),
+                  );
+                },
                 childCount: filtered.length,
               ),
             ),
@@ -281,7 +497,10 @@ class _Header extends StatelessWidget {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Wordmark(size: 36),
+              Wordmark(
+                size: 36,
+                gradient: LinearGradient(colors: [Colors.white, profile.lightColor]),
+              ),
               const SizedBox(height: 4),
               Text(
                 'Oi, ${profile.displayName}',
@@ -385,6 +604,12 @@ class _ContinueCard extends StatelessWidget {
                   ],
                 ),
               ),
+              if (title.audience.profile != null)
+                Positioned(
+                  top: 10,
+                  right: 10,
+                  child: ProfileAvatar(profile: title.audience.profile!, radius: 13),
+                ),
               Positioned(
                 right: 12,
                 bottom: 12,
@@ -464,6 +689,298 @@ class _ErrorState extends StatelessWidget {
             const SizedBox(height: 16),
             FilledButton(onPressed: onRetry, child: const Text('Tentar de novo')),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FilterButton extends StatelessWidget {
+  final bool active;
+  final VoidCallback onTap;
+  const _FilterButton({required this.active, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: 'Filtros e ordem',
+      child: GlassCard(
+        radius: 20,
+        padding: const EdgeInsets.all(14),
+        borderColor: active ? scheme.primary : null,
+        onTap: onTap,
+        child: Icon(Icons.tune_rounded, color: active ? scheme.primary : null),
+      ),
+    );
+  }
+}
+
+/// Barra de navegação flutuante: início, adicionar (botão central) e estatísticas.
+class _NavBar extends StatelessWidget {
+  final VoidCallback onAdd;
+  final VoidCallback onNight;
+  final VoidCallback onStats;
+  const _NavBar({required this.onAdd, required this.onNight, required this.onStats});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+        child: Center(
+          heightFactor: 1,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: GlassCard(
+              radius: 32,
+              blur: 24,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _NavItem(icon: Icons.home_rounded, label: 'Início', selected: true, onTap: () {}),
+                  _NavItem(icon: Icons.theaters_rounded, label: 'Noite', selected: false, onTap: onNight),
+                  GestureDetector(
+                    onTap: onAdd,
+                    child: Container(
+                      width: 56,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        gradient: context.nx.gradient,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: scheme.primary.withValues(alpha: 0.55),
+                            blurRadius: 20,
+                            offset: const Offset(0, 6),
+                          ),
+                        ],
+                      ),
+                      child: const Icon(Icons.add_rounded, color: Colors.white, size: 30),
+                    ),
+                  ),
+                  _NavItem(icon: Icons.favorite_rounded, label: 'Nós', selected: false, onTap: onStats),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NavItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  const _NavItem({required this.icon, required this.label, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final color = selected ? scheme.primary : scheme.onSurfaceVariant;
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: color),
+            const SizedBox(height: 2),
+            Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: color)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _NewsCard extends StatelessWidget {
+  final NewsItem item;
+  final VoidCallback onTap;
+  const _NewsCard({required this.item, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final poster = item.title.posterUrl;
+    return SizedBox(
+      width: 250,
+      child: GlassCard(
+        radius: 20,
+        padding: const EdgeInsets.all(10),
+        onTap: onTap,
+        child: Row(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: SizedBox(
+                width: 42,
+                height: 62,
+                child: poster == null
+                    ? ColoredBox(color: scheme.surfaceContainerHigh)
+                    : CachedNetworkImage(imageUrl: poster, fit: BoxFit.cover),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.title.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(item.upcoming ? Icons.event_rounded : Icons.new_releases_rounded, size: 14, color: scheme.secondary),
+                      const SizedBox(width: 5),
+                      Expanded(
+                        child: Text(
+                          item.text,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 12.5, color: scheme.secondary, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _OfflineBanner extends StatelessWidget {
+  const _OfflineBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.amber.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.cloud_off_rounded, size: 16),
+          SizedBox(width: 8),
+          Expanded(
+            child: Text('Sem conexão: mostrando o último catálogo salvo.', style: TextStyle(fontSize: 12.5)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Destaque da série principal de quem está logado, no topo da home.
+class _MainCard extends StatelessWidget {
+  final TitleModel title;
+  final VoidCallback onTap;
+  const _MainCard({required this.title, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final image = title.backdropUrl ?? title.posterUrl;
+    final progress = progressLabel(title);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(26),
+        boxShadow: [
+          BoxShadow(color: scheme.primary.withValues(alpha: 0.35), blurRadius: 28, offset: const Offset(0, 10)),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(26),
+        child: AspectRatio(
+          aspectRatio: 16 / 9,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (image != null)
+                CachedNetworkImage(imageUrl: image, fit: BoxFit.cover)
+              else
+                ColoredBox(color: scheme.surfaceContainerHigh),
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    stops: const [0.25, 1],
+                    colors: [Colors.transparent, context.nx.base.withValues(alpha: 0.95)],
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 12,
+                left: 12,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(gradient: context.nx.gradient, borderRadius: BorderRadius.circular(999)),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.star_rounded, size: 14, color: Colors.white),
+                      SizedBox(width: 4),
+                      Text('Sua principal', style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w800)),
+                    ],
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 16,
+                right: 70,
+                bottom: 14,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 20),
+                    ),
+                    if (progress != null)
+                      Text(
+                        'Parou em $progress',
+                        style: TextStyle(color: scheme.secondary, fontWeight: FontWeight.w700, fontSize: 13),
+                      ),
+                  ],
+                ),
+              ),
+              Positioned(
+                right: 14,
+                bottom: 14,
+                child: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(gradient: context.nx.gradient, shape: BoxShape.circle),
+                  child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 28),
+                ),
+              ),
+              Positioned.fill(child: Material(color: Colors.transparent, child: InkWell(onTap: onTap))),
+            ],
+          ),
         ),
       ),
     );
